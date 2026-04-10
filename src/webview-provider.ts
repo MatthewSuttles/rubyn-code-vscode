@@ -254,7 +254,8 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       } else if (msg.type === 'tool/use' && msg.payload) {
         addMessage('assistant', '🔧 Using tool: ' + msg.payload.tool);
       } else if (msg.type === 'tool/result' && msg.payload) {
-        addMessage('assistant', (msg.payload.success ? '✅' : '❌') + ' ' + msg.payload.summary);
+        var summary = msg.payload.summary || msg.payload.result || msg.payload.output || JSON.stringify(msg.payload);
+        addMessage('assistant', (msg.payload.success ? '✅' : '❌') + ' ' + summary);
       } else if (msg.type === 'error' && msg.payload) {
         addMessage('assistant', '⚠️ Error: ' + msg.payload.message);
       }
