@@ -1,0 +1,98 @@
+import { LitElement, html, css } from 'lit';
+import { customElement, property } from 'lit/decorators.js';
+
+export type AgentStatus = 'idle' | 'thinking' | 'streaming' | 'done';
+
+@customElement('status-header')
+export class StatusHeader extends LitElement {
+  static override styles = css`
+    :host {
+      display: block;
+      padding: 6px 12px;
+      border-bottom: 1px solid var(--vscode-panel-border);
+      background: var(--vscode-editor-background);
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--vscode-descriptionForeground);
+    }
+
+    .left {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      transition: background-color 250ms ease;
+    }
+
+    .status-dot.idle,
+    .status-dot.done {
+      background: #3fb950;
+    }
+
+    .status-dot.thinking {
+      background: #d29922;
+      animation: pulse-dot 1.2s ease-in-out infinite;
+    }
+
+    .status-dot.streaming {
+      background: #58a6ff;
+      animation: pulse-dot 0.8s ease-in-out infinite;
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+
+    .cost {
+      font-variant-numeric: tabular-nums;
+    }
+  `;
+
+  @property({ type: String }) status: AgentStatus = 'idle';
+  @property({ type: Number }) totalCost = 0;
+  @property({ type: Number }) inputTokens = 0;
+  @property({ type: Number }) outputTokens = 0;
+
+  override render() {
+    const statusLabel =
+      this.status === 'idle' || this.status === 'done'
+        ? 'Ready'
+        : this.status === 'thinking'
+          ? 'Thinking...'
+          : 'Streaming...';
+
+    const costStr = this.totalCost > 0
+      ? `$${this.totalCost.toFixed(4)}`
+      : '';
+
+    return html`
+      <div class="header">
+        <div class="left">
+          <span class="status-dot ${this.status}"></span>
+          <span>${statusLabel}</span>
+        </div>
+        ${costStr
+          ? html`<span class="cost">${costStr}</span>`
+          : html`<span>New session</span>`}
+      </div>
+    `;
+  }
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'status-header': StatusHeader;
+  }
+}

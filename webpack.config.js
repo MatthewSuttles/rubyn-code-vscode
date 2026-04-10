@@ -38,18 +38,18 @@ const extensionConfig = {
 const webviewConfig = {
   target: 'web',
   mode: 'none',
-  entry: './webview/chat.tsx',
+  entry: './webview/chat-app.ts',
   output: {
     path: path.resolve(__dirname, 'dist'),
     filename: 'webview.js',
   },
   resolve: {
-    extensions: ['.ts', '.tsx', '.js', '.jsx'],
+    extensions: ['.ts', '.js'],
   },
   module: {
     rules: [
       {
-        test: /\.tsx?$/,
+        test: /\.ts$/,
         exclude: /node_modules/,
         use: {
           loader: 'ts-loader',

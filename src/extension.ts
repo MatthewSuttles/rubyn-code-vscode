@@ -106,6 +106,29 @@ export async function activate(
   );
   context.subscriptions.push(chatProvider);
 
+  // 5c. Forward active editor context to the webview.
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      if (editor) {
+        const relativePath = vscode.workspace.asRelativePath(editor.document.uri);
+        chatProvider.postMessage({
+          type: 'context/update',
+          payload: { activeFile: relativePath, language: editor.document.languageId },
+        });
+      }
+    }),
+  );
+
+  // Send initial active file context.
+  if (vscode.window.activeTextEditor) {
+    const editor = vscode.window.activeTextEditor;
+    const relativePath = vscode.workspace.asRelativePath(editor.document.uri);
+    chatProvider.postMessage({
+      type: 'context/update',
+      payload: { activeFile: relativePath, language: editor.document.languageId },
+    });
+  }
+
   // 6. Register commands.
 
   // rubyn-code.openChat — focus the chat webview panel.

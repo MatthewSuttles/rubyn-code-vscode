@@ -178,89 +178,12 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
   />
   <link rel="stylesheet" href="${styleUri}" />
   <title>Rubyn Code</title>
-  <style>
-    body { margin: 0; font-family: var(--vscode-font-family); color: var(--vscode-foreground); background: var(--vscode-editor-background); }
-    .chat-container { display: flex; flex-direction: column; height: 100vh; }
-    .messages { flex: 1; overflow-y: auto; padding: 12px; }
-    .input-area { padding: 12px; border-top: 1px solid var(--vscode-panel-border); display: flex; gap: 8px; }
-    .input-area textarea { flex: 1; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); border-radius: 4px; padding: 8px; resize: none; font-family: inherit; font-size: 13px; }
-    .input-area button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer; font-size: 13px; }
-    .input-area button:hover { background: var(--vscode-button-hoverBackground); }
-    .message { margin-bottom: 12px; padding: 8px 12px; border-radius: 6px; font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
-    .message.user { background: var(--vscode-button-background); color: var(--vscode-button-foreground); margin-left: 40px; }
-    .message.assistant { background: var(--vscode-editor-inactiveSelectionBackground); margin-right: 40px; }
-    .status { padding: 8px 12px; font-size: 11px; color: var(--vscode-descriptionForeground); text-align: center; }
-  </style>
 </head>
 <body>
-  <div class="chat-container">
-    <div class="status">Rubyn Code v0.1.0 — connected</div>
-    <div class="messages" id="messages"></div>
-    <div class="input-area">
-      <textarea id="input" rows="3" placeholder="Ask Rubyn anything..."></textarea>
-      <button id="send">Send</button>
-    </div>
+  <div id="root">
+    <chat-app></chat-app>
   </div>
-  <script nonce="${nonce}">
-    const vscode = acquireVsCodeApi();
-    const messagesEl = document.getElementById('messages');
-    const inputEl = document.getElementById('input');
-    const sendBtn = document.getElementById('send');
-    let currentAssistant = null;
-    let sessionId = 'session_' + Date.now();
-
-    function addMessage(role, text) {
-      const div = document.createElement('div');
-      div.className = 'message ' + role;
-      div.textContent = text;
-      messagesEl.appendChild(div);
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-      return div;
-    }
-
-    function send() {
-      const text = inputEl.value.trim();
-      if (!text) return;
-      addMessage('user', text);
-      inputEl.value = '';
-      currentAssistant = addMessage('assistant', '');
-      vscode.postMessage({ type: 'sendPrompt', payload: { text: text, sessionId: sessionId } });
-    }
-
-    sendBtn.addEventListener('click', send);
-    inputEl.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        send();
-      }
-    });
-
-    window.addEventListener('message', function(event) {
-      const msg = event.data;
-      if (msg.type === 'stream/text' && msg.payload) {
-        if (!currentAssistant) {
-          currentAssistant = addMessage('assistant', '');
-        }
-        var txt = msg.payload.delta || msg.payload.text || '';
-        if (!msg.payload.final && !msg.payload.done) {
-          currentAssistant.textContent += txt;
-        } else {
-          currentAssistant.textContent = txt;
-        }
-        messagesEl.scrollTop = messagesEl.scrollHeight;
-        if (msg.payload.done || msg.payload.final) {
-          currentAssistant = null;
-        }
-      } else if (msg.type === 'tool/use' && msg.payload) {
-        addMessage('assistant', '🔧 Using tool: ' + msg.payload.tool);
-      } else if (msg.type === 'tool/result' && msg.payload) {
-        var summary = msg.payload.summary || msg.payload.result || msg.payload.output || JSON.stringify(msg.payload);
-        addMessage('assistant', (msg.payload.success ? '✅' : '❌') + ' ' + summary);
-      } else if (msg.type === 'error' && msg.payload) {
-        addMessage('assistant', '⚠️ Error: ' + msg.payload.message);
-      }
-    });
-  </script>
+  <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
   }

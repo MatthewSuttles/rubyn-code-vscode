@@ -1,0 +1,562 @@
+import { LitElement, html, css, nothing } from 'lit';
+import { customElement, property } from 'lit/decorators.js';
+import { unsafeHTML } from 'lit/directives/unsafe-html.js';
+
+type MessageRole = 'user' | 'assistant';
+
+/* ------------------------------------------------------------------ */
+/*  Lightweight Markdown renderer                                     */
+/* ------------------------------------------------------------------ */
+
+/** Basic keyword sets for syntax highlighting. */
+const KEYWORDS: Record<string, Set<string>> = {
+  ruby: new Set([
+    'def','end','class','module','do','if','else','elsif','unless','while','until',
+    'for','in','return','yield','begin','rescue','ensure','raise','require','include',
+    'extend','attr_accessor','attr_reader','attr_writer','self','nil','true','false',
+    'and','or','not','then','puts','print','private','protected','public','super','new',
+  ]),
+  js: new Set([
+    'const','let','var','function','return','if','else','for','while','do','switch',
+    'case','break','continue','class','extends','import','export','from','default',
+    'async','await','new','this','try','catch','finally','throw','typeof','instanceof',
+    'true','false','null','undefined','yield','of','in',
+  ]),
+  sql: new Set([
+    'SELECT','FROM','WHERE','INSERT','INTO','VALUES','UPDATE','SET','DELETE','CREATE',
+    'TABLE','ALTER','DROP','INDEX','JOIN','LEFT','RIGHT','INNER','OUTER','ON','AND',
+    'OR','NOT','NULL','IS','IN','LIKE','ORDER','BY','GROUP','HAVING','LIMIT','OFFSET',
+    'AS','DISTINCT','COUNT','SUM','AVG','MIN','MAX','BETWEEN','EXISTS','UNION','ALL',
+    'select','from','where','insert','into','values','update','set','delete','create',
+    'table','alter','drop','index','join','left','right','inner','outer','on','and',
+    'or','not','null','is','in','like','order','by','group','having','limit','offset',
+  ]),
+  shell: new Set([
+    'if','then','else','elif','fi','for','do','done','while','until','case','esac',
+    'function','return','exit','echo','cd','ls','grep','sed','awk','cat','rm','mv',
+    'cp','mkdir','chmod','chown','export','source','alias','sudo','apt','brew','npm',
+    'yarn','git','docker','bundle','rake','rails',
+  ]),
+  yaml: new Set([
+    'true','false','null','yes','no','on','off',
+  ]),
+};
+
+function langKeywords(lang: string): Set<string> | undefined {
+  const l = lang.toLowerCase();
+  if (l === 'ruby' || l === 'rb') return KEYWORDS.ruby;
+  if (l === 'javascript' || l === 'js' || l === 'typescript' || l === 'ts' || l === 'jsx' || l === 'tsx') return KEYWORDS.js;
+  if (l === 'sql') return KEYWORDS.sql;
+  if (l === 'bash' || l === 'sh' || l === 'shell' || l === 'zsh') return KEYWORDS.shell;
+  if (l === 'yaml' || l === 'yml') return KEYWORDS.yaml;
+  return undefined;
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function highlightCode(code: string, lang: string): string {
+  const kw = langKeywords(lang);
+  const escaped = escapeHtml(code);
+  if (!kw) return escaped;
+
+  // Highlight strings first
+  let result = escaped
+    .replace(/(["'`])(?:(?=(\\?))\2.)*?\1/g, '<span class="hl-str">$&</span>');
+
+  // Highlight comments (# for ruby/shell/yaml, // for js)
+  const l = lang.toLowerCase();
+  if (l === 'ruby' || l === 'rb' || l === 'bash' || l === 'sh' || l === 'shell' || l === 'zsh' || l === 'yaml' || l === 'yml') {
+    result = result.replace(/(^|[\n])(\s*)(#[^\n]*)/g, '$1$2<span class="hl-cmt">$3</span>');
+  } else if (l === 'javascript' || l === 'js' || l === 'typescript' || l === 'ts' || l === 'jsx' || l === 'tsx') {
+    result = result.replace(/(\/\/[^\n]*)/g, '<span class="hl-cmt">$1</span>');
+  } else if (l === 'sql') {
+    result = result.replace(/(--[^\n]*)/g, '<span class="hl-cmt">$1</span>');
+  }
+
+  // Highlight keywords (whole word only)
+  result = result.replace(/\b([a-zA-Z_]+)\b/g, (match) => {
+    if (kw.has(match)) return `<span class="hl-kw">${match}</span>`;
+    return match;
+  });
+
+  // Highlight numbers
+  result = result.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="hl-num">$1</span>');
+
+  return result;
+}
+
+/** Parse markdown text into HTML. Handles fenced code, inline formatting, headers, lists, links. */
+function renderMarkdown(text: string): string {
+  const lines = text.split('\n');
+  const out: string[] = [];
+  let i = 0;
+  let inList = false;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Fenced code block
+    const fenceMatch = line.match(/^```(\w*)/);
+    if (fenceMatch) {
+      if (inList) { out.push('</ul>'); inList = false; }
+      const lang = fenceMatch[1] || '';
+      const codeLines: string[] = [];
+      i++;
+      while (i < lines.length && !lines[i].startsWith('```')) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      i++; // skip closing ```
+      const code = codeLines.join('\n');
+      const highlighted = highlightCode(code, lang);
+      const langLabel = lang ? `<span class="code-lang">${escapeHtml(lang)}</span>` : '';
+      out.push(
+        `<div class="code-block-wrapper">` +
+        `<div class="code-block-header">${langLabel}<button class="copy-btn" data-code="${escapeHtml(code)}">Copy</button></div>` +
+        `<pre class="code-block"><code>${highlighted}</code></pre>` +
+        `</div>`,
+      );
+      continue;
+    }
+
+    // Headers
+    const headerMatch = line.match(/^(#{1,4})\s+(.+)/);
+    if (headerMatch) {
+      if (inList) { out.push('</ul>'); inList = false; }
+      const level = headerMatch[1].length;
+      out.push(`<h${level}>${inlineFormat(headerMatch[2])}</h${level}>`);
+      i++;
+      continue;
+    }
+
+    // Unordered list
+    const listMatch = line.match(/^(\s*)[-*]\s+(.+)/);
+    if (listMatch) {
+      if (!inList) { out.push('<ul>'); inList = true; }
+      out.push(`<li>${inlineFormat(listMatch[2])}</li>`);
+      i++;
+      continue;
+    }
+
+    // Ordered list
+    const olMatch = line.match(/^(\s*)\d+\.\s+(.+)/);
+    if (olMatch) {
+      if (!inList) { out.push('<ul>'); inList = true; }
+      out.push(`<li>${inlineFormat(olMatch[2])}</li>`);
+      i++;
+      continue;
+    }
+
+    // Close list if we leave list context
+    if (inList && line.trim() === '') {
+      out.push('</ul>');
+      inList = false;
+    }
+
+    // Empty line
+    if (line.trim() === '') {
+      i++;
+      continue;
+    }
+
+    // Paragraph
+    if (inList) { out.push('</ul>'); inList = false; }
+    out.push(`<p>${inlineFormat(line)}</p>`);
+    i++;
+  }
+
+  if (inList) out.push('</ul>');
+  return out.join('');
+}
+
+/** Inline markdown formatting: bold, italic, code, links. */
+function inlineFormat(text: string): string {
+  let s = escapeHtml(text);
+  // inline code
+  s = s.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+  // bold
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // italic
+  s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // links
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+  return s;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Component                                                          */
+/* ------------------------------------------------------------------ */
+
+@customElement('chat-message')
+export class ChatMessage extends LitElement {
+  static override styles = css`
+    :host {
+      display: block;
+      animation: fade-in 200ms ease;
+    }
+
+    @keyframes fade-in {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .message {
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.55;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+
+    .message.user {
+      background: color-mix(in srgb, var(--vscode-button-background) 20%, transparent);
+      margin-left: 40px;
+      border-radius: 12px 12px 4px 12px;
+    }
+
+    .message.assistant {
+      background: transparent;
+      margin-right: 8px;
+    }
+
+    .message.tool-use {
+      background: color-mix(in srgb, var(--vscode-editorInfo-foreground, #3794ff) 8%, transparent);
+      border: 1px solid color-mix(in srgb, var(--vscode-editorInfo-foreground, #3794ff) 25%, transparent);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 12px;
+    }
+
+    .message.tool-result {
+      background: color-mix(in srgb, var(--vscode-editor-foreground) 5%, transparent);
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+
+    .message.error {
+      background: color-mix(in srgb, var(--vscode-errorForeground, #f85149) 10%, transparent);
+      border: 1px solid color-mix(in srgb, var(--vscode-errorForeground, #f85149) 25%, transparent);
+      border-radius: 8px;
+      padding: 8px 12px;
+      color: var(--vscode-errorForeground, #f85149);
+    }
+
+    /* Markdown content */
+    .content p {
+      margin: 0 0 8px 0;
+    }
+
+    .content p:last-child {
+      margin-bottom: 0;
+    }
+
+    .content h1, .content h2, .content h3, .content h4 {
+      margin: 12px 0 6px 0;
+      font-weight: 600;
+    }
+
+    .content h1 { font-size: 16px; }
+    .content h2 { font-size: 14px; }
+    .content h3 { font-size: 13px; }
+    .content h4 { font-size: 13px; opacity: 0.85; }
+
+    .content ul {
+      margin: 4px 0;
+      padding-left: 20px;
+    }
+
+    .content li {
+      margin: 2px 0;
+    }
+
+    .content a {
+      color: var(--vscode-textLink-foreground);
+      text-decoration: none;
+    }
+
+    .content a:hover {
+      text-decoration: underline;
+    }
+
+    .content strong {
+      font-weight: 600;
+    }
+
+    /* Inline code */
+    .content .inline-code {
+      background: var(--vscode-textCodeBlock-background, rgba(110, 118, 129, 0.15));
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-family: var(--vscode-editor-font-family, 'Menlo', 'Monaco', monospace);
+      font-size: 12px;
+    }
+
+    /* Code blocks */
+    .content .code-block-wrapper {
+      margin: 8px 0;
+      border-radius: 6px;
+      overflow: hidden;
+      border: 1px solid var(--vscode-panel-border);
+    }
+
+    .content .code-block-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 10px;
+      background: color-mix(in srgb, var(--vscode-textCodeBlock-background, #1e1e1e) 80%, transparent);
+      font-size: 11px;
+      color: var(--vscode-descriptionForeground);
+    }
+
+    .content .code-lang {
+      text-transform: lowercase;
+      font-family: var(--vscode-editor-font-family, monospace);
+    }
+
+    .content .copy-btn {
+      background: none;
+      border: 1px solid var(--vscode-panel-border);
+      color: var(--vscode-descriptionForeground);
+      border-radius: 4px;
+      padding: 1px 8px;
+      font-size: 11px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: color 200ms ease;
+    }
+
+    .content .copy-btn:hover {
+      color: var(--vscode-editor-foreground);
+      border-color: var(--vscode-focusBorder);
+    }
+
+    .content .code-block {
+      margin: 0;
+      padding: 10px 12px;
+      background: var(--vscode-textCodeBlock-background, rgba(30, 30, 30, 0.9));
+      font-family: var(--vscode-editor-font-family, 'Menlo', 'Monaco', monospace);
+      font-size: 12px;
+      line-height: 1.5;
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    .content .code-block code {
+      font-family: inherit;
+    }
+
+    /* Syntax highlighting */
+    .content .hl-kw { color: var(--vscode-symbolIcon-keywordForeground, #c586c0); }
+    .content .hl-str { color: var(--vscode-symbolIcon-stringForeground, #ce9178); }
+    .content .hl-num { color: var(--vscode-symbolIcon-numberForeground, #b5cea8); }
+    .content .hl-cmt { color: var(--vscode-symbolIcon-commentForeground, #6a9955); font-style: italic; }
+
+    /* Tool use card */
+    .tool-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 600;
+    }
+
+    .tool-icon {
+      font-size: 13px;
+    }
+
+    .tool-name {
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-size: 12px;
+    }
+
+    .tool-args {
+      margin-top: 6px;
+    }
+
+    .tool-args summary {
+      font-size: 11px;
+      color: var(--vscode-descriptionForeground);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .tool-args pre {
+      margin: 4px 0 0 0;
+      padding: 6px 10px;
+      background: var(--vscode-textCodeBlock-background, rgba(30, 30, 30, 0.5));
+      border-radius: 4px;
+      font-size: 11px;
+      font-family: var(--vscode-editor-font-family, monospace);
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    /* Tool result */
+    .result-icon {
+      margin-right: 4px;
+    }
+
+    .result-summary {
+      color: var(--vscode-descriptionForeground);
+    }
+
+    /* Streaming cursor */
+    .streaming-cursor {
+      display: inline-block;
+      width: 2px;
+      height: 14px;
+      background: var(--vscode-editorCursor-foreground, var(--vscode-editor-foreground));
+      margin-left: 2px;
+      vertical-align: text-bottom;
+      animation: blink-cursor 1s step-end infinite;
+    }
+
+    @keyframes blink-cursor {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+
+    /* Approval buttons */
+    .approval-actions {
+      margin-top: 8px;
+      display: flex;
+      gap: 8px;
+    }
+
+    .approval-actions button {
+      padding: 3px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+      border: none;
+      transition: opacity 200ms;
+    }
+
+    .btn-approve {
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+    }
+
+    .btn-deny {
+      background: var(--vscode-button-secondaryBackground, var(--vscode-input-background));
+      color: var(--vscode-button-secondaryForeground, var(--vscode-editor-foreground));
+      border: 1px solid var(--vscode-panel-border) !important;
+    }
+
+    .approval-actions button:hover {
+      opacity: 0.85;
+    }
+  `;
+
+  @property({ type: String }) role: MessageRole = 'assistant';
+  @property({ type: String }) content = '';
+  @property({ type: Boolean }) streaming = false;
+
+  /* Tool use properties */
+  @property({ type: String }) toolName = '';
+  @property({ type: Object }) toolArgs: Record<string, unknown> = {};
+  @property({ type: String }) requestId = '';
+  @property({ type: Boolean }) requiresApproval = false;
+
+  /* Tool result properties */
+  @property({ type: Boolean }) toolSuccess = false;
+  @property({ type: String }) toolSummary = '';
+
+  /* Special message types */
+  @property({ type: String }) messageType: 'text' | 'tool-use' | 'tool-result' | 'error' = 'text';
+
+  override render() {
+    switch (this.messageType) {
+      case 'tool-use':
+        return this._renderToolUse();
+      case 'tool-result':
+        return this._renderToolResult();
+      case 'error':
+        return html`<div class="message error">${this.content}</div>`;
+      default:
+        return this._renderTextMessage();
+    }
+  }
+
+  override firstUpdated() {
+    this.shadowRoot?.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      if (target.classList.contains('copy-btn')) {
+        const code = target.getAttribute('data-code') ?? '';
+        navigator.clipboard.writeText(code).then(() => {
+          target.textContent = 'Copied!';
+          setTimeout(() => { target.textContent = 'Copy'; }, 1500);
+        });
+      }
+      if (target.classList.contains('btn-approve') || target.classList.contains('btn-deny')) {
+        const approved = target.classList.contains('btn-approve');
+        this.dispatchEvent(
+          new CustomEvent('tool-approval', {
+            detail: { requestId: this.requestId, approved },
+            bubbles: true,
+            composed: true,
+          }),
+        );
+      }
+    });
+  }
+
+  private _renderTextMessage() {
+    const rendered = this.role === 'user'
+      ? html`<div class="message user">${this.content}</div>`
+      : html`
+          <div class="message assistant">
+            <div class="content">
+              ${unsafeHTML(renderMarkdown(this.content))}
+              ${this.streaming ? html`<span class="streaming-cursor"></span>` : nothing}
+            </div>
+          </div>
+        `;
+    return rendered;
+  }
+
+  private _renderToolUse() {
+    const argsStr = JSON.stringify(this.toolArgs, null, 2);
+    return html`
+      <div class="message tool-use">
+        <div class="tool-header">
+          <span class="tool-icon">\u{1F527}</span>
+          <span class="tool-name">${this.toolName}</span>
+        </div>
+        <details class="tool-args">
+          <summary>Arguments</summary>
+          <pre>${argsStr}</pre>
+        </details>
+        ${this.requiresApproval
+          ? html`
+              <div class="approval-actions">
+                <button class="btn-approve">Allow</button>
+                <button class="btn-deny">Deny</button>
+              </div>
+            `
+          : nothing}
+      </div>
+    `;
+  }
+
+  private _renderToolResult() {
+    return html`
+      <div class="message tool-result">
+        <span class="result-icon">${this.toolSuccess ? '\u2705' : '\u274C'}</span>
+        <span class="result-summary">${this.toolSummary || (this.toolSuccess ? 'Done' : 'Failed')}</span>
+      </div>
+    `;
+  }
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'chat-message': ChatMessage;
+  }
+}

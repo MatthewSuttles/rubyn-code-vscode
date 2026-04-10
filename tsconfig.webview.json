@@ -12,8 +12,9 @@
     "sourceMap": true,
     "outDir": "./dist",
     "rootDir": "./webview",
-    "jsx": "react"
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false
   },
-  "include": ["webview/**/*.ts", "webview/**/*.tsx"],
+  "include": ["webview/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }
