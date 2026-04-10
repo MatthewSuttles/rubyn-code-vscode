@@ -281,16 +281,15 @@ export class ChatApp extends LitElement {
     const current = { ...updated[this._streamingIdx] };
 
     if (isFinal) {
-      // Final message sends the complete text.
-      current.content = payload.text ?? current.content;
+      // Final message: just stop streaming, keep the content we already accumulated.
+      // Don't replace with payload.text since that would duplicate what we already streamed.
       current.streaming = false;
       this._streamingIdx = -1;
     } else {
-      // Partial: append delta or replace with text chunk.
-      if (payload.delta) {
-        current.content += payload.delta;
-      } else if (payload.text) {
-        current.content += payload.text;
+      // Partial: append the text chunk.
+      const chunk = payload.delta || payload.text || '';
+      if (chunk) {
+        current.content += chunk;
       }
     }
 
