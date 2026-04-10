@@ -537,8 +537,14 @@ const Chat: React.FC = () => {
 // Mount
 // ---------------------------------------------------------------------------
 
-const container = document.getElementById('root');
-if (container) {
-  const root = createRoot(container);
-  root.render(<Chat />);
+try {
+  const container = document.getElementById('root');
+  if (container) {
+    const root = createRoot(container);
+    root.render(<Chat />);
+  } else {
+    document.body.innerHTML = '<p style="color:red;padding:16px;">Error: #root element not found</p>';
+  }
+} catch (err) {
+  document.body.innerHTML = `<p style="color:red;padding:16px;">Mount error: ${err}</p>`;
 }

@@ -7,6 +7,7 @@ import { Bridge } from './bridge';
 import { ProcessManager } from './process-manager';
 import { ContextProvider } from './context-provider';
 import { createStatusBar } from './status-bar';
+import { ChatWebviewProvider } from './webview-provider';
 import { InitializeParams, InitializeResult } from './types';
 
 // ---------------------------------------------------------------------------
@@ -27,6 +28,9 @@ export async function activate(
   // 1. Create output channel.
   const outputChannel = vscode.window.createOutputChannel('Rubyn Code');
   outputChannel.appendLine('Rubyn Code extension activating...');
+  outputChannel.show(true); // Force the output panel to show on activation
+  console.log('[Rubyn Code] Extension activate() called');
+  vscode.window.showInformationMessage('Rubyn Code is starting...');
   context.subscriptions.push(outputChannel);
 
   // 2. Create ProcessManager and spawn the CLI process.
@@ -91,6 +95,16 @@ export async function activate(
   // 5. Create ContextProvider.
   contextProvider = new ContextProvider();
   context.subscriptions.push(contextProvider);
+
+  // 5b. Register the chat webview provider.
+  const chatProvider = new ChatWebviewProvider(context.extensionUri, bridge);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      ChatWebviewProvider.viewType,
+      chatProvider,
+    ),
+  );
+  context.subscriptions.push(chatProvider);
 
   // 6. Register commands.
 
