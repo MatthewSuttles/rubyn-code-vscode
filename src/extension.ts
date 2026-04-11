@@ -109,7 +109,7 @@ export async function activate(
   // 5c. Forward active editor context to the webview.
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor((editor) => {
-      if (editor) {
+      if (editor && editor.document.uri.scheme === 'file') {
         const relativePath = vscode.workspace.asRelativePath(editor.document.uri);
         chatProvider.postMessage({
           type: 'context/update',
@@ -120,7 +120,7 @@ export async function activate(
   );
 
   // Send initial active file context.
-  if (vscode.window.activeTextEditor) {
+  if (vscode.window.activeTextEditor && vscode.window.activeTextEditor.document.uri.scheme === 'file') {
     const editor = vscode.window.activeTextEditor;
     const relativePath = vscode.workspace.asRelativePath(editor.document.uri);
     chatProvider.postMessage({

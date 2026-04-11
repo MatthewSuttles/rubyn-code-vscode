@@ -155,6 +155,7 @@ export class ChatApp extends LitElement {
 
       <message-list
         .messages=${this.messages}
+        .logoUri=${this.logoUri}
         @tool-approval=${this._onToolApproval}
       ></message-list>
 

@@ -40,9 +40,10 @@ export class MessageList extends LitElement {
     }
 
     .empty-logo {
-      font-size: 32px;
+      width: 48px;
+      height: 48px;
       margin-bottom: 12px;
-      opacity: 0.5;
+      border-radius: 8px;
     }
 
     .empty-title {
@@ -65,6 +66,7 @@ export class MessageList extends LitElement {
   `;
 
   @property({ type: Array }) messages: ChatMessageData[] = [];
+  @property({ type: String }) logoUri = '';
 
   @query('.messages')
   private _container!: HTMLElement;
@@ -85,7 +87,9 @@ export class MessageList extends LitElement {
     if (this.messages.length === 0) {
       return html`
         <div class="empty-state">
-          <div class="empty-logo">\u{1F48E}</div>
+          ${this.logoUri
+            ? html`<img class="empty-logo" src="${this.logoUri}" alt="Rubyn" />`
+            : html`<div class="empty-logo" style="font-size:32px;">💎</div>`}
           <div class="empty-title">Rubyn Code</div>
           <div class="empty-hint">Ask a question or use the quick actions above to get started.</div>
         </div>
