@@ -5,7 +5,7 @@
  */
 
 import { LitElement, html, css } from 'lit';
-import { customElement, state, query } from 'lit/decorators.js';
+import { customElement, property, state, query } from 'lit/decorators.js';
 
 import './styles/theme.css';
 import './components/status-header';
@@ -77,6 +77,8 @@ export class ChatApp extends LitElement {
   @state() private activeFile = '';
   @state() private activeLanguage = '';
 
+  @property({ type: String }) logoUri = '';
+
   /** ID counter for messages. */
   private _nextId = 1;
 
@@ -142,6 +144,7 @@ export class ChatApp extends LitElement {
         .totalCost=${this.totalCost}
         .inputTokens=${this.inputTokens}
         .outputTokens=${this.outputTokens}
+        .logoUri=${this.logoUri}
       ></status-header>
 
       <quick-actions

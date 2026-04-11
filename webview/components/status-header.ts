@@ -27,6 +27,12 @@ export class StatusHeader extends LitElement {
       gap: 6px;
     }
 
+    .logo {
+      width: 18px;
+      height: 18px;
+      border-radius: 3px;
+    }
+
     .status-dot {
       width: 7px;
       height: 7px;
@@ -64,6 +70,7 @@ export class StatusHeader extends LitElement {
   @property({ type: Number }) totalCost = 0;
   @property({ type: Number }) inputTokens = 0;
   @property({ type: Number }) outputTokens = 0;
+  @property({ type: String }) logoUri = '';
 
   override render() {
     const statusLabel =
@@ -80,8 +87,10 @@ export class StatusHeader extends LitElement {
     return html`
       <div class="header">
         <div class="left">
+          ${this.logoUri ? html`<img class="logo" src="${this.logoUri}" alt="Rubyn" />` : ''}
           <span class="status-dot ${this.status}"></span>
-          <span>${statusLabel}</span>
+          <span>Rubyn Code</span>
+          <span>· ${statusLabel}</span>
         </div>
         ${costStr
           ? html`<span class="cost">${costStr}</span>`

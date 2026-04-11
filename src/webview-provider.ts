@@ -161,6 +161,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
   private getHtmlForWebview(webview: vscode.Webview): string {
     const scriptUri = this.getUri(webview, 'dist', 'webview.js');
     const styleUri = this.getUri(webview, 'dist', 'webview.css');
+    const logoUri = this.getUri(webview, 'resources', 'icon.png');
     const nonce = this.getNonce();
 
     return /* html */ `<!DOCTYPE html>
@@ -181,7 +182,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
 </head>
 <body>
   <div id="root">
-    <chat-app></chat-app>
+    <chat-app logoUri="${logoUri}"></chat-app>
   </div>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
