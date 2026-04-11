@@ -61,6 +61,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       localResourceRoots: [
         vscode.Uri.joinPath(this.extensionUri, 'dist'),
         vscode.Uri.joinPath(this.extensionUri, 'webview'),
+        vscode.Uri.joinPath(this.extensionUri, 'resources'),
       ],
     };
 

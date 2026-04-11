@@ -104,7 +104,8 @@ export class ChatApp extends LitElement {
       this.totalCost = saved.totalCost;
       this.inputTokens = saved.inputTokens;
       this.outputTokens = saved.outputTokens;
-      this.activeFile = saved.activeFile ?? '';
+      const af = saved.activeFile ?? '';
+      this.activeFile = (af && !af.startsWith('extension-output') && !af.includes('://')) ? af : '';
       this.activeLanguage = saved.activeLanguage ?? '';
       this._nextId = this.messages.length + 1;
     }
@@ -387,7 +388,11 @@ export class ChatApp extends LitElement {
     language?: string;
   }) {
     if (!payload) return;
-    if (payload.activeFile !== undefined) this.activeFile = payload.activeFile;
+    if (payload.activeFile !== undefined) {
+      // Filter out non-file URIs (output channels, settings, etc.)
+      const f = payload.activeFile;
+      this.activeFile = (f && !f.startsWith('extension-output') && !f.includes('://')) ? f : '';
+    }
     if (payload.language !== undefined) this.activeLanguage = payload.language;
   }
 
