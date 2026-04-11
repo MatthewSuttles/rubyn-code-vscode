@@ -64,6 +64,22 @@ export class StatusHeader extends LitElement {
     .cost {
       font-variant-numeric: tabular-nums;
     }
+
+    .new-session {
+      background: none;
+      border: 1px solid var(--vscode-button-background);
+      color: var(--vscode-button-background);
+      border-radius: 3px;
+      padding: 1px 6px;
+      font-size: 10px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .new-session:hover {
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+    }
   `;
 
   @property({ type: String }) status: AgentStatus = 'idle';
@@ -92,11 +108,16 @@ export class StatusHeader extends LitElement {
           <span>Rubyn Code</span>
           <span>· ${statusLabel}</span>
         </div>
-        ${costStr
-          ? html`<span class="cost">${costStr}</span>`
-          : html`<span>New session</span>`}
+        <div class="left">
+          ${costStr ? html`<span class="cost">${costStr}</span>` : ''}
+          <button class="new-session" @click=${this._newSession} title="Start a new session">+ New</button>
+        </div>
       </div>
     `;
+  }
+
+  private _newSession() {
+    this.dispatchEvent(new CustomEvent('new-session', { bubbles: true, composed: true }));
   }
 }
 

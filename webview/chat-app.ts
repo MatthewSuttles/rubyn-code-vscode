@@ -145,6 +145,7 @@ export class ChatApp extends LitElement {
         .inputTokens=${this.inputTokens}
         .outputTokens=${this.outputTokens}
         .logoUri=${this.logoUri}
+        @new-session=${this._onNewSession}
       ></status-header>
 
       <quick-actions
@@ -190,6 +191,16 @@ export class ChatApp extends LitElement {
 
   private _onCancel() {
     this.vscode.postMessage({ type: 'cancel' });
+  }
+
+  private _onNewSession() {
+    this.messages = [];
+    this.sessionId = `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    this.totalCost = 0;
+    this.inputTokens = 0;
+    this.outputTokens = 0;
+    this.agentStatus = 'idle';
+    this._streamingIdx = -1;
   }
 
   private _onToolApproval(e: CustomEvent<{ requestId: string; approved: boolean }>) {
