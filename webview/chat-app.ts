@@ -340,8 +340,10 @@ export class ChatApp extends LitElement {
 
   private _handleToolUse(payload: {
     tool?: string;
+    toolName?: string;
     requestId?: string;
     args?: Record<string, unknown>;
+    params?: Record<string, unknown>;
     requiresApproval?: boolean;
   }) {
     if (!payload) return;
@@ -354,8 +356,8 @@ export class ChatApp extends LitElement {
       role: 'assistant',
       content: '',
       messageType: 'tool-use',
-      toolName: payload.tool ?? 'unknown',
-      toolArgs: payload.args ?? {},
+      toolName: payload.tool ?? payload.toolName ?? 'unknown',
+      toolArgs: payload.args ?? payload.params ?? {},
       requestId: payload.requestId ?? '',
       requiresApproval: payload.requiresApproval ?? false,
     };
