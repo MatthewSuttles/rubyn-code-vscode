@@ -78,17 +78,86 @@ Every tool call (file read, file write, shell command) requires your approval be
 
 | Setting | Default | Description |
 |---------|---------|-------------|
+| `rubyn-code.provider` | `"anthropic"` | Active LLM provider (`anthropic` or `openai`) |
+| `rubyn-code.model` | `"claude-opus-4-6"` | Model for completions |
+| `rubyn-code.sessionBudget` | `5.00` | Max dollar budget per session |
+| `rubyn-code.dailyBudget` | `10.00` | Max daily spend across all sessions |
+| `rubyn-code.maxIterations` | `200` | Max agent loop iterations per prompt |
+| `rubyn-code.contextThreshold` | `80000` | Token count before context compaction |
 | `rubyn-code.yoloMode` | `false` | Auto-approve all tool calls |
 | `rubyn-code.executablePath` | `"rubyn-code"` | Path to the CLI executable |
-| `rubyn-code.sessionBudget` | `5.00` | Max dollar budget per session |
-| `rubyn-code.model` | `"claude-sonnet-4-6"` | Model for completions (`claude-opus-4-6` or `claude-sonnet-4-6`) |
+
+You can also click the model selector in the status bar to switch between **Auto** (task-based routing) and a specific model.
+
+## Supported Editors
+
+This extension works in both **VS Code** and **Cursor**.
+
+- **VS Code** — install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=rubyn.rubyn-code)
+- **Cursor** — install from [Open VSX](https://open-vsx.org/extension/rubyn/rubyn-code), or install the `.vsix` file manually
 
 ## Requirements
 
 - **Ruby 4.0+**
 - **`rubyn-code` gem** installed and authenticated (`gem install rubyn-code`)
-- **VS Code 1.98+**
+- **VS Code 1.98+** or **Cursor**
 - A valid authentication method (macOS Keychain via prior CLI login, `ANTHROPIC_API_KEY` env var, or `~/.rubyn-code/tokens.yml`)
+
+## Development
+
+### Prerequisites
+
+- Node.js 18+ (`nvm use 18` if you use nvm)
+- npm
+
+### Build
+
+```bash
+git clone https://github.com/MatthewSuttles/rubyn-code-vscode.git
+cd rubyn-code-vscode
+npm install
+npm run build
+```
+
+### Install locally
+
+Build produces a `dist/` folder. To install the extension from source:
+
+```bash
+# Package into a .vsix file (requires Node 20+)
+npx @vscode/vsce package
+
+# Install in VS Code
+code --install-extension rubyn-code-*.vsix
+
+# Install in Cursor
+cursor --install-extension rubyn-code-*.vsix
+```
+
+### Development mode
+
+```bash
+npm run watch
+```
+
+Then press `F5` in VS Code to launch the Extension Development Host with the latest changes.
+
+### Run tests
+
+```bash
+npm test
+```
+
+### Publish
+
+```bash
+# VS Code Marketplace
+npx @vscode/vsce publish
+
+# OpenVSX (Cursor, Gitpod, Theia)
+npx @vscode/vsce package
+npx ovsx publish rubyn-code-*.vsix -p <OPENVSX_TOKEN>
+```
 
 ## Full Documentation
 
