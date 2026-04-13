@@ -50,6 +50,10 @@
       {
         "command": "rubyn-code.explainCode",
         "title": "Rubyn Code: Explain Code"
+      },
+      {
+        "command": "rubyn-code.selectModel",
+        "title": "Rubyn Code: Select Model"
       }
     ],
     "viewsContainers": {
@@ -77,29 +81,66 @@
     "configuration": {
       "title": "Rubyn Code",
       "properties": {
-        "rubyn-code.yoloMode": {
-          "type": "boolean",
-          "default": false,
-          "description": "Enable YOLO mode to auto-approve all tool calls without confirmation."
-        },
         "rubyn-code.executablePath": {
           "type": "string",
           "default": "rubyn-code",
-          "description": "Path to the rubyn-code CLI executable."
+          "description": "Path to the rubyn-code CLI executable.",
+          "order": 0
         },
-        "rubyn-code.sessionBudget": {
-          "type": "number",
-          "default": 5,
-          "description": "Maximum dollar budget per session."
+        "rubyn-code.provider": {
+          "type": "string",
+          "default": "anthropic",
+          "enum": ["anthropic", "openai"],
+          "enumDescriptions": [
+            "Anthropic (Claude models)",
+            "OpenAI (GPT models)"
+          ],
+          "description": "Active LLM provider.",
+          "order": 1
         },
         "rubyn-code.model": {
           "type": "string",
-          "default": "claude-sonnet-4-6",
-          "enum": [
-            "claude-opus-4-6",
-            "claude-sonnet-4-6"
-          ],
-          "description": "Claude model to use for completions."
+          "default": "claude-opus-4-6",
+          "description": "Model to use for completions. Available models depend on the selected provider.",
+          "order": 2
+        },
+        "rubyn-code.sessionBudget": {
+          "type": "number",
+          "default": 5.0,
+          "minimum": 0.1,
+          "maximum": 100,
+          "description": "Maximum spending per session (USD).",
+          "order": 3
+        },
+        "rubyn-code.dailyBudget": {
+          "type": "number",
+          "default": 10.0,
+          "minimum": 0.5,
+          "maximum": 500,
+          "description": "Maximum daily spending across all sessions (USD).",
+          "order": 4
+        },
+        "rubyn-code.maxIterations": {
+          "type": "number",
+          "default": 200,
+          "minimum": 1,
+          "maximum": 1000,
+          "description": "Maximum agent loop iterations per prompt.",
+          "order": 5
+        },
+        "rubyn-code.contextThreshold": {
+          "type": "number",
+          "default": 80000,
+          "minimum": 10000,
+          "maximum": 200000,
+          "description": "Token count that triggers context compaction.",
+          "order": 6
+        },
+        "rubyn-code.yoloMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Auto-approve all tool calls without confirmation.",
+          "order": 7
         }
       }
     },

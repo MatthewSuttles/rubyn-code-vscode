@@ -7,8 +7,9 @@ import { Bridge } from './bridge';
 import { ProcessManager } from './process-manager';
 import { ContextProvider } from './context-provider';
 import { createStatusBar } from './status-bar';
+import { createModelSelector } from './model-selector';
 import { ChatWebviewProvider } from './webview-provider';
-import { InitializeParams, InitializeResult } from './types';
+import { InitializeParams, InitializeResult, ConfigGetAllResult } from './types';
 
 // ---------------------------------------------------------------------------
 // Module-level state (accessible from both activate and deactivate)
@@ -64,6 +65,25 @@ export async function activate(
     outputChannel.appendLine('[bridge] Connection closed');
   });
 
+  bridge.on('config/changed', (params: Record<string, unknown> | undefined) => {
+    if (!params) return;
+    const serverToVscode: Record<string, string> = {
+      'provider': 'rubyn-code.provider',
+      'model': 'rubyn-code.model',
+      'session_budget_usd': 'rubyn-code.sessionBudget',
+      'daily_budget_usd': 'rubyn-code.dailyBudget',
+      'max_iterations': 'rubyn-code.maxIterations',
+      'context_threshold_tokens': 'rubyn-code.contextThreshold',
+    };
+    const key = params.key as string;
+    const value = params.value;
+    const vsKey = serverToVscode[key];
+    if (vsKey) {
+      const [section, prop] = [vsKey.split('.')[0], vsKey.split('.')[1]];
+      vscode.workspace.getConfiguration(section).update(prop, value, vscode.ConfigurationTarget.Global);
+    }
+  });
+
   // 4. Send initialize request.
   const workspacePath =
     vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
@@ -90,6 +110,14 @@ export async function activate(
       `Initialize failed: ${err instanceof Error ? err.message : String(err)}`,
     );
     // Continue anyway — some commands may still work.
+  }
+
+  // 4b. Sync server config to VS Code settings.
+  try {
+    const serverConfig = await bridge.request<ConfigGetAllResult>('config/get', {});
+    syncServerConfigToVscode(serverConfig);
+  } catch {
+    outputChannel.appendLine('Config sync skipped — server does not support config/get.');
   }
 
   // 5. Create ContextProvider.
@@ -128,6 +156,29 @@ export async function activate(
       payload: { activeFile: relativePath, language: editor.document.languageId },
     });
   }
+
+  // 5d. Push VS Code setting changes to the server.
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (!bridge) return;
+      const configMap: Record<string, string> = {
+        'rubyn-code.provider': 'provider',
+        'rubyn-code.model': 'model',
+        'rubyn-code.sessionBudget': 'session_budget_usd',
+        'rubyn-code.dailyBudget': 'daily_budget_usd',
+        'rubyn-code.maxIterations': 'max_iterations',
+        'rubyn-code.contextThreshold': 'context_threshold_tokens',
+      };
+      for (const [vsKey, serverKey] of Object.entries(configMap)) {
+        if (e.affectsConfiguration(vsKey)) {
+          const value = vscode.workspace.getConfiguration('rubyn-code').get(vsKey.split('.')[1]);
+          bridge.request('config/set', { key: serverKey, value }).catch((err: Error) => {
+            outputChannel.appendLine(`Config sync failed for ${serverKey}: ${err.message}`);
+          });
+        }
+      }
+    }),
+  );
 
   // 6. Register commands.
 
@@ -288,7 +339,38 @@ export async function activate(
     );
   }
 
+  // 8. Register model selector.
+  try {
+    const modelSelector = createModelSelector(bridge);
+    await modelSelector.refresh();
+    context.subscriptions.push(modelSelector);
+  } catch {
+    outputChannel.appendLine('Model selector not available — skipping.');
+  }
+
   outputChannel.appendLine('Rubyn Code extension activated.');
+}
+
+// ---------------------------------------------------------------------------
+// Config helpers
+// ---------------------------------------------------------------------------
+
+function syncServerConfigToVscode(serverConfig: ConfigGetAllResult): void {
+  const config = vscode.workspace.getConfiguration('rubyn-code');
+  const mapping: Record<string, string> = {
+    'provider': 'provider',
+    'model': 'model',
+    'session_budget_usd': 'sessionBudget',
+    'daily_budget_usd': 'dailyBudget',
+    'max_iterations': 'maxIterations',
+    'context_threshold_tokens': 'contextThreshold',
+  };
+  for (const [serverKey, vscodeProp] of Object.entries(mapping)) {
+    const entry = serverConfig.settings[serverKey];
+    if (entry && entry.value !== undefined) {
+      config.update(vscodeProp, entry.value, vscode.ConfigurationTarget.Global);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

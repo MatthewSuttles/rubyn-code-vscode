@@ -174,6 +174,15 @@ export interface SessionCostParams {
 }
 
 // ---------------------------------------------------------------------------
+// Config types
+// ---------------------------------------------------------------------------
+
+export interface ConfigGetAllResult {
+  settings: Record<string, { value: unknown; default: unknown }>;
+  providers: Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------------
 // Initialize result
 // ---------------------------------------------------------------------------
 
