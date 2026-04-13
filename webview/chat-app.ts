@@ -172,6 +172,7 @@ export class ChatApp extends LitElement {
         .activeFile=${this.activeFile}
         @send-prompt=${this._onSendPrompt}
         @cancel-prompt=${this._onCancel}
+        @slash-command=${this._onSlashCommand}
       ></chat-input>
     `;
   }
@@ -210,6 +211,68 @@ export class ChatApp extends LitElement {
     this.outputTokens = 0;
     this.agentStatus = 'idle';
     this._streamingIdx = -1;
+  }
+
+  private _onSlashCommand(e: CustomEvent<{ command: string }>) {
+    const cmd = e.detail.command;
+
+    switch (cmd) {
+      case '/new':
+        this._onNewSession();
+        break;
+
+      case '/model':
+        this.vscode.postMessage({ type: 'slashCommand', payload: { command: 'selectModel' } });
+        break;
+
+      case '/review':
+        this.vscode.postMessage({ type: 'slashCommand', payload: { command: 'reviewPR' } });
+        break;
+
+      case '/refactor':
+        this._addUserMessage('/refactor');
+        this.vscode.postMessage({
+          type: 'sendPrompt',
+          payload: {
+            text: 'Refactor this code. Improve readability, reduce duplication, and follow Ruby/Rails best practices.',
+            sessionId: this.sessionId,
+          },
+        });
+        break;
+
+      case '/specs':
+        this._addUserMessage('/specs');
+        this.vscode.postMessage({
+          type: 'sendPrompt',
+          payload: {
+            text: 'Write specs for this file. Provide thorough test coverage with edge cases.',
+            sessionId: this.sessionId,
+          },
+        });
+        break;
+
+      case '/explain':
+        this._addUserMessage('/explain');
+        this.vscode.postMessage({
+          type: 'sendPrompt',
+          payload: {
+            text: 'Explain this code. Describe what it does, why, and any notable patterns or potential issues.',
+            sessionId: this.sessionId,
+          },
+        });
+        break;
+
+      case '/budget':
+        this._addUserMessage('/budget');
+        this.vscode.postMessage({
+          type: 'sendPrompt',
+          payload: {
+            text: 'Show my current session budget, daily budget, and spending so far.',
+            sessionId: this.sessionId,
+          },
+        });
+        break;
+    }
   }
 
   private _onModelChange(e: CustomEvent<{ isAuto: boolean; provider?: string; model?: string }>) {

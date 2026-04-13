@@ -12,7 +12,7 @@ import { Bridge } from './bridge';
 
 /** Messages the webview can send to the extension host. */
 interface WebviewToExtension {
-  type: 'sendPrompt' | 'approveToolUse' | 'cancel' | 'changeModel';
+  type: 'sendPrompt' | 'approveToolUse' | 'cancel' | 'changeModel' | 'slashCommand';
   payload?: Record<string, unknown>;
 }
 
@@ -156,6 +156,16 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
           ]).then(() =>
             this.bridge.request('config/set', { key: 'model_mode', value: 'manual' }),
           ).catch(() => {});
+        }
+        break;
+      }
+
+      case 'slashCommand': {
+        const { command } = (message.payload ?? {}) as Record<string, unknown>;
+        if (command === 'selectModel') {
+          vscode.commands.executeCommand('rubyn-code.selectModel');
+        } else if (command === 'reviewPR') {
+          vscode.commands.executeCommand('rubyn-code.reviewPR');
         }
         break;
       }

@@ -154,7 +154,7 @@ export class StatusHeader extends LitElement {
             ${this._renderModelOptions()}
           </select>
           ${costStr ? html`<span class="cost">${costStr}</span>` : ''}
-          <button class="new-session" @click=${this._newSession} title="Start a new session">+ New</button>
+          <button class="new-session" @click=${this._newSession} title="Start a new session">New Session</button>
         </div>
       </div>
     `;
