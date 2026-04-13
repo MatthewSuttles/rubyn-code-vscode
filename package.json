@@ -65,6 +65,10 @@
         }
       ]
     },
+    "viewsDefaultLocation": {
+      "rubyn-code.chat": "secondary",
+      "rubyn-code.sessions": "secondary"
+    },
     "views": {
       "rubyn-code": [
         {
