@@ -34,6 +34,9 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
   private readonly bridge: Bridge;
   private readonly disposables: vscode.Disposable[] = [];
 
+  /** Messages queued before the webview is resolved. Replayed on resolve. */
+  private pendingMessages: Record<string, unknown>[] = [];
+
   /** Notification handlers registered on the bridge; stored so we can remove them. */
   private readonly bridgeListeners: Array<{
     method: string;
@@ -77,6 +80,12 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     // Forward bridge notifications to the webview.
     this.registerBridgeForwarding();
 
+    // Replay any messages that were queued before the webview was ready.
+    for (const msg of this.pendingMessages) {
+      webviewView.webview.postMessage(msg);
+    }
+    this.pendingMessages = [];
+
     // Cleanup on dispose.
     webviewView.onDidDispose(() => this.onDispose(), undefined, this.disposables);
 
@@ -92,9 +101,13 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
   // Public helpers
   // ---------------------------------------------------------------------------
 
-  /** Post a message to the webview (if it exists and is visible). */
+  /** Post a message to the webview. Queues if the webview isn't resolved yet. */
   postMessage(message: Record<string, unknown>): void {
-    this.view?.webview.postMessage(message);
+    if (this.view) {
+      this.view.webview.postMessage(message);
+    } else {
+      this.pendingMessages.push(message);
+    }
   }
 
   // ---------------------------------------------------------------------------
