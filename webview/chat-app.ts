@@ -13,7 +13,7 @@ import './components/quick-actions';
 import './components/message-list';
 import './components/chat-input';
 
-import type { AgentStatus } from './components/status-header';
+import type { AgentStatus, ModelOption } from './components/status-header';
 import type { ChatMessageData } from './components/message-list';
 import type { ChatInput } from './components/chat-input';
 
@@ -76,6 +76,9 @@ export class ChatApp extends LitElement {
   @state() private outputTokens = 0;
   @state() private activeFile = '';
   @state() private activeLanguage = '';
+  @state() private models: ModelOption[] = [];
+  @state() private modelMode = 'auto';
+  @state() private activeModel = '';
 
   @property({ type: String }) logoUri = '';
 
@@ -146,7 +149,11 @@ export class ChatApp extends LitElement {
         .inputTokens=${this.inputTokens}
         .outputTokens=${this.outputTokens}
         .logoUri=${this.logoUri}
+        .models=${this.models}
+        .modelMode=${this.modelMode}
+        .activeModel=${this.activeModel}
         @new-session=${this._onNewSession}
+        @model-change=${this._onModelChange}
       ></status-header>
 
       <quick-actions
@@ -205,6 +212,20 @@ export class ChatApp extends LitElement {
     this._streamingIdx = -1;
   }
 
+  private _onModelChange(e: CustomEvent<{ value: string; isAuto: boolean }>) {
+    this.vscode.postMessage({
+      type: 'changeModel',
+      payload: e.detail,
+    });
+
+    if (e.detail.isAuto) {
+      this.modelMode = 'auto';
+    } else {
+      this.modelMode = 'manual';
+      this.activeModel = e.detail.value;
+    }
+  }
+
   private _onToolApproval(e: CustomEvent<{ requestId: string; approved: boolean }>) {
     this.vscode.postMessage({
       type: 'approveToolUse',
@@ -243,6 +264,10 @@ export class ChatApp extends LitElement {
 
       case 'context/update':
         this._handleContextUpdate(msg.payload);
+        break;
+
+      case 'models/update':
+        this._handleModelsUpdate(msg.payload);
         break;
 
       case 'error':
@@ -394,6 +419,17 @@ export class ChatApp extends LitElement {
       this.activeFile = (f && !f.startsWith('extension-output') && !f.includes('://')) ? f : '';
     }
     if (payload.language !== undefined) this.activeLanguage = payload.language;
+  }
+
+  private _handleModelsUpdate(payload: {
+    models?: ModelOption[];
+    activeModel?: string;
+    modelMode?: string;
+  }) {
+    if (!payload) return;
+    if (payload.models) this.models = payload.models;
+    if (payload.activeModel) this.activeModel = payload.activeModel;
+    if (payload.modelMode) this.modelMode = payload.modelMode;
   }
 
   private _handleError(payload: { message?: string }) {

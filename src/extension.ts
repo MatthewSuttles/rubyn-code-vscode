@@ -134,7 +134,27 @@ export async function activate(
   );
   context.subscriptions.push(chatProvider);
 
-  // 5c. Forward active editor context to the webview.
+  // 5c. Forward model/config changes to the webview dropdown.
+  bridge.on('config/changed', (params: Record<string, unknown> | undefined) => {
+    if (!params) return;
+    const key = params.key as string;
+    if (key === 'model' || key === 'model_mode') {
+      chatProvider.postMessage({
+        type: 'models/update',
+        payload: { [key === 'model' ? 'activeModel' : 'modelMode']: params.value },
+      });
+    }
+  });
+
+  // 5d. Fetch available models and send to the webview.
+  try {
+    const modelsResult = await bridge.request<Record<string, unknown>>('models/list', {});
+    chatProvider.postMessage({ type: 'models/update', payload: modelsResult });
+  } catch {
+    outputChannel.appendLine('Models list skipped — server does not support models/list.');
+  }
+
+  // 5d. Forward active editor context to the webview.
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       if (editor && editor.document.uri.scheme === 'file') {

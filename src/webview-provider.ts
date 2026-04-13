@@ -12,7 +12,7 @@ import { Bridge } from './bridge';
 
 /** Messages the webview can send to the extension host. */
 interface WebviewToExtension {
-  type: 'sendPrompt' | 'approveToolUse' | 'cancel';
+  type: 'sendPrompt' | 'approveToolUse' | 'cancel' | 'changeModel';
   payload?: Record<string, unknown>;
 }
 
@@ -129,6 +129,18 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
 
       case 'cancel': {
         this.bridge.notify('cancel', {});
+        break;
+      }
+
+      case 'changeModel': {
+        const { value, isAuto } = (message.payload ?? {}) as Record<string, unknown>;
+        if (isAuto) {
+          this.bridge.request('config/set', { key: 'model_mode', value: 'auto' }).catch(() => {});
+        } else {
+          this.bridge.request('config/set', { key: 'model', value: value as string }).then(() =>
+            this.bridge.request('config/set', { key: 'model_mode', value: 'manual' }),
+          ).catch(() => {});
+        }
         break;
       }
     }
