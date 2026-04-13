@@ -116,6 +116,10 @@ export async function activate(
   try {
     const serverConfig = await bridge.request<ConfigGetAllResult>('config/get', {});
     syncServerConfigToVscode(serverConfig);
+    const provider = serverConfig.settings['provider']?.value ?? 'unknown';
+    const model = serverConfig.settings['model']?.value ?? 'unknown';
+    const mode = serverConfig.settings['model_mode']?.value ?? 'auto';
+    outputChannel.appendLine(`Config synced: provider=${provider} model=${model} mode=${mode}`);
   } catch {
     outputChannel.appendLine('Config sync skipped — server does not support config/get.');
   }
@@ -138,11 +142,12 @@ export async function activate(
   bridge.on('config/changed', (params: Record<string, unknown> | undefined) => {
     if (!params) return;
     const key = params.key as string;
-    if (key === 'model' || key === 'model_mode') {
+    if (key === 'model' || key === 'model_mode' || key === 'provider') {
       chatProvider.postMessage({
         type: 'models/update',
-        payload: { [key === 'model' ? 'activeModel' : 'modelMode']: params.value },
+        payload: { [key === 'model' ? 'activeModel' : key === 'provider' ? 'activeProvider' : 'modelMode']: params.value },
       });
+      outputChannel.appendLine(`[config] ${key} changed to: ${params.value}`);
     }
   });
 
@@ -150,6 +155,9 @@ export async function activate(
   try {
     const modelsResult = await bridge.request<Record<string, unknown>>('models/list', {});
     chatProvider.postMessage({ type: 'models/update', payload: modelsResult });
+    const modelsList = (modelsResult.models as Array<{ provider: string; model: string }>) ?? [];
+    outputChannel.appendLine(`Models loaded: ${modelsList.length} models from ${new Set(modelsList.map(m => m.provider)).size} providers`);
+    modelsList.forEach(m => outputChannel.appendLine(`  ${m.provider}: ${m.model}`));
   } catch {
     outputChannel.appendLine('Models list skipped — server does not support models/list.');
   }
