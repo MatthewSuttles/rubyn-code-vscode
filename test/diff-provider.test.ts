@@ -99,10 +99,10 @@ describe('DiffProvider', () => {
         expect.stringContaining('user.rb'),
       );
 
-      // Should have asked user
+      // Should have asked user with a modal prompt.
       expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
         expect.stringContaining('user.rb'),
-        { modal: false },
+        expect.objectContaining({ modal: true }),
         'Accept',
         'Reject',
       );
@@ -133,10 +133,10 @@ describe('DiffProvider', () => {
       // Should have shown the preview
       expect(vscode.window.showTextDocument).toHaveBeenCalled();
 
-      // Should have asked user
+      // Should have asked user with a modal prompt.
       expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
         expect.stringContaining('post.rb'),
-        { modal: false },
+        expect.objectContaining({ modal: true }),
         'Accept',
         'Reject',
       );
@@ -273,7 +273,7 @@ describe('DiffProvider', () => {
 
       expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(
         expect.stringContaining('old.rb'),
-        { modal: false },
+        expect.objectContaining({ modal: true }),
         'Accept',
         'Reject',
       );
@@ -429,12 +429,8 @@ describe('DiffProvider', () => {
       await new Promise((r) => setTimeout(r, 50));
 
       expect(vscode.workspace.fs.delete).toHaveBeenCalled();
-      expect(vscode.window.showWarningMessage).not.toHaveBeenCalledWith(
-        expect.anything(),
-        { modal: false },
-        'Accept',
-        'Reject',
-      );
+      // Yolo mode auto-accepts — we should NOT have prompted the user at all.
+      expect(vscode.window.showWarningMessage).not.toHaveBeenCalled();
     });
   });
 

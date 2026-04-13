@@ -197,10 +197,15 @@ export class DiffProvider implements vscode.Disposable {
     const title = `Rubyn: ${this.basename(edit.path)} (proposed changes)`;
     await vscode.commands.executeCommand('vscode.diff', originalUri, proposedUri, title);
 
-    // Show accept / reject buttons.
+    // Modal dialog — the old non-modal notification was easy to miss, and
+    // if the user dismissed it without clicking, the extension rejected the
+    // edit silently. A modal blocks until the user explicitly chooses.
     const choice = await vscode.window.showInformationMessage(
       `Rubyn wants to modify ${this.basename(edit.path)}`,
-      { modal: false },
+      {
+        modal: true,
+        detail: 'Review the proposed changes in the diff editor on the left.',
+      },
       'Accept',
       'Reject',
     );
@@ -266,7 +271,10 @@ export class DiffProvider implements vscode.Disposable {
 
     const choice = await vscode.window.showInformationMessage(
       `Rubyn wants to create this file: ${this.basename(filePath)}`,
-      { modal: false },
+      {
+        modal: true,
+        detail: 'Review the proposed file in the preview tab on the left.',
+      },
       'Accept',
       'Reject',
     );
@@ -312,7 +320,10 @@ export class DiffProvider implements vscode.Disposable {
 
     const choice = await vscode.window.showWarningMessage(
       `Rubyn wants to delete ${this.basename(edit.path)}`,
-      { modal: false },
+      {
+        modal: true,
+        detail: `This will permanently delete ${edit.path}.`,
+      },
       'Accept',
       'Reject',
     );

@@ -61,30 +61,49 @@ function highlightCode(code: string, lang: string): string {
   const escaped = escapeHtml(code);
   if (!kw) return escaped;
 
-  // Highlight strings first
-  let result = escaped
-    .replace(/(["'`])(?:(?=(\\?))\2.)*?\1/g, '<span class="hl-str">$&</span>');
+  // Tokenize comments and strings first, replacing them with placeholders so
+  // the subsequent keyword/number regex only runs on plain text. Without this,
+  // a keyword like `class` would match inside the attribute of an already-
+  // inserted `<span class="hl-cmt">`, mangling the HTML into something like
+  // `<span <span class="hl-kw">class</span>="hl-cmt">`, and browsers would
+  // render the leftover `="hl-cmt">` as literal text.
+  const tokens: string[] = [];
+  const stash = (html: string): string => {
+    const idx = tokens.length;
+    tokens.push(html);
+    return `\u0000T${idx}\u0000`;
+  };
 
-  // Highlight comments (# for ruby/shell/yaml, // for js)
+  let result = escaped;
+
+  // Strings (quoted single/double/backtick).
+  result = result.replace(/(["'`])(?:(?=(\\?))\2.)*?\1/g, (m) =>
+    stash(`<span class="hl-str">${m}</span>`),
+  );
+
+  // Comments — syntax varies by language.
   const l = lang.toLowerCase();
-  if (l === 'ruby' || l === 'rb' || l === 'bash' || l === 'sh' || l === 'shell' || l === 'zsh' || l === 'yaml' || l === 'yml') {
-    result = result.replace(/(^|[\n])(\s*)(#[^\n]*)/g, '$1$2<span class="hl-cmt">$3</span>');
-  } else if (l === 'javascript' || l === 'js' || l === 'typescript' || l === 'ts' || l === 'jsx' || l === 'tsx') {
-    result = result.replace(/(\/\/[^\n]*)/g, '<span class="hl-cmt">$1</span>');
+  if (['ruby', 'rb', 'bash', 'sh', 'shell', 'zsh', 'yaml', 'yml'].includes(l)) {
+    result = result.replace(
+      /(^|[\n])(\s*)(#[^\n]*)/g,
+      (_m, p1, p2, p3) => `${p1}${p2}${stash(`<span class="hl-cmt">${p3}</span>`)}`,
+    );
+  } else if (['javascript', 'js', 'typescript', 'ts', 'jsx', 'tsx'].includes(l)) {
+    result = result.replace(/(\/\/[^\n]*)/g, (m) => stash(`<span class="hl-cmt">${m}</span>`));
   } else if (l === 'sql') {
-    result = result.replace(/(--[^\n]*)/g, '<span class="hl-cmt">$1</span>');
+    result = result.replace(/(--[^\n]*)/g, (m) => stash(`<span class="hl-cmt">${m}</span>`));
   }
 
-  // Highlight keywords (whole word only)
-  result = result.replace(/\b([a-zA-Z_]+)\b/g, (match) => {
-    if (kw.has(match)) return `<span class="hl-kw">${match}</span>`;
-    return match;
-  });
+  // Keywords (whole word only) — now safe to run, strings/comments are stashed.
+  result = result.replace(/\b([a-zA-Z_]+)\b/g, (match) =>
+    kw.has(match) ? `<span class="hl-kw">${match}</span>` : match,
+  );
 
-  // Highlight numbers
+  // Numbers.
   result = result.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="hl-num">$1</span>');
 
-  return result;
+  // Restore stashed strings/comments.
+  return result.replace(/\u0000T(\d+)\u0000/g, (_m, i) => tokens[Number(i)]);
 }
 
 /** Parse markdown text into HTML. Handles fenced code, inline formatting, headers, lists, links. */
