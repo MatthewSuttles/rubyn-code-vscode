@@ -132,7 +132,8 @@ export class StatusHeader extends LitElement {
       ? `$${this.totalCost.toFixed(4)}`
       : '';
 
-    const selectedValue = this.modelMode === 'auto' ? 'auto' : this.activeModel;
+    const activeProvider = this.models.find((m) => m.model === this.activeModel)?.provider ?? '';
+    const selectedValue = this.modelMode === 'auto' ? 'auto' : `${activeProvider}:${this.activeModel}`;
 
     return html`
       <div class="header">
@@ -172,7 +173,7 @@ export class StatusHeader extends LitElement {
       groups.push(html`
         <optgroup label=${provider}>
           ${providerModels.map(
-            (m) => html`<option value=${m.model}>${m.model} (${m.tier})</option>`,
+            (m) => html`<option value="${m.provider}:${m.model}">${m.model} (${m.tier})</option>`,
           )}
         </optgroup>
       `);
@@ -184,13 +185,26 @@ export class StatusHeader extends LitElement {
     const select = e.target as HTMLSelectElement;
     const value = select.value;
 
-    this.dispatchEvent(
-      new CustomEvent('model-change', {
-        detail: { value, isAuto: value === 'auto' },
-        bubbles: true,
-        composed: true,
-      }),
-    );
+    if (value === 'auto') {
+      this.dispatchEvent(
+        new CustomEvent('model-change', {
+          detail: { isAuto: true },
+          bubbles: true,
+          composed: true,
+        }),
+      );
+    } else {
+      const colonIdx = value.indexOf(':');
+      const provider = value.slice(0, colonIdx);
+      const model = value.slice(colonIdx + 1);
+      this.dispatchEvent(
+        new CustomEvent('model-change', {
+          detail: { isAuto: false, provider, model },
+          bubbles: true,
+          composed: true,
+        }),
+      );
+    }
   }
 
   private _newSession() {

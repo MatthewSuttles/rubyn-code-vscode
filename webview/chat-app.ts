@@ -212,7 +212,7 @@ export class ChatApp extends LitElement {
     this._streamingIdx = -1;
   }
 
-  private _onModelChange(e: CustomEvent<{ value: string; isAuto: boolean }>) {
+  private _onModelChange(e: CustomEvent<{ isAuto: boolean; provider?: string; model?: string }>) {
     this.vscode.postMessage({
       type: 'changeModel',
       payload: e.detail,
@@ -222,7 +222,7 @@ export class ChatApp extends LitElement {
       this.modelMode = 'auto';
     } else {
       this.modelMode = 'manual';
-      this.activeModel = e.detail.value;
+      this.activeModel = e.detail.model ?? '';
     }
   }
 

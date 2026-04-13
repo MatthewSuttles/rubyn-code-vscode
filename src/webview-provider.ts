@@ -133,11 +133,14 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       }
 
       case 'changeModel': {
-        const { value, isAuto } = (message.payload ?? {}) as Record<string, unknown>;
+        const { isAuto, provider, model } = (message.payload ?? {}) as Record<string, unknown>;
         if (isAuto) {
           this.bridge.request('config/set', { key: 'model_mode', value: 'auto' }).catch(() => {});
         } else {
-          this.bridge.request('config/set', { key: 'model', value: value as string }).then(() =>
+          Promise.all([
+            this.bridge.request('config/set', { key: 'provider', value: provider as string }),
+            this.bridge.request('config/set', { key: 'model', value: model as string }),
+          ]).then(() =>
             this.bridge.request('config/set', { key: 'model_mode', value: 'manual' }),
           ).catch(() => {});
         }
