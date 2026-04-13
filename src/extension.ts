@@ -9,6 +9,7 @@ import { ContextProvider } from './context-provider';
 import { createStatusBar } from './status-bar';
 import { createModelSelector } from './model-selector';
 import { ChatWebviewProvider } from './webview-provider';
+import { DiffProvider } from './diff-provider';
 import { InitializeParams, InitializeResult, ConfigGetAllResult } from './types';
 
 // ---------------------------------------------------------------------------
@@ -127,6 +128,14 @@ export async function activate(
   // 5. Create ContextProvider.
   contextProvider = new ContextProvider();
   context.subscriptions.push(contextProvider);
+
+  // 5a. Register the diff provider. This owns the `file/edit` / `file/create`
+  // notification handlers, opens the diff/preview view, and surfaces the
+  // Accept / Reject CodeLens at the top of the proposed document. Without
+  // this the gem's edit notifications have no subscriber — it times out
+  // after 60s and auto-denies the edit with no UI prompt ever shown.
+  const diffProvider = new DiffProvider(bridge);
+  context.subscriptions.push(diffProvider);
 
   // 5b. Register the chat webview provider.
   const chatProvider = new ChatWebviewProvider(context.extensionUri, bridge);

@@ -252,6 +252,21 @@ export class TabInputTextDiff {
 }
 
 // ---------------------------------------------------------------------------
+// CodeLens
+// ---------------------------------------------------------------------------
+
+export class CodeLens {
+  constructor(
+    public readonly range: Range,
+    public readonly command?: {
+      title: string;
+      command: string;
+      arguments?: unknown[];
+    },
+  ) {}
+}
+
+// ---------------------------------------------------------------------------
 // CancellationToken
 // ---------------------------------------------------------------------------
 
@@ -401,6 +416,7 @@ export const window = {
     all: [] as any[],
     close: vi.fn(async () => true),
   },
+  setStatusBarMessage: vi.fn((_text: string, _hideAfter?: number) => new Disposable(() => {})),
 };
 
 // ---------------------------------------------------------------------------
@@ -439,6 +455,17 @@ export const workspace = {
     return new Disposable(() => {});
   }),
   onDidChangeConfiguration: vi.fn((_handler: any) => new Disposable(() => {})),
+  onDidCloseTextDocument: vi.fn((_handler: any) => new Disposable(() => {})),
+};
+
+// ---------------------------------------------------------------------------
+// languages
+// ---------------------------------------------------------------------------
+
+export const languages = {
+  registerCodeLensProvider: vi.fn((_selector: any, _provider: any) => {
+    return new Disposable(() => {});
+  }),
 };
 
 // ---------------------------------------------------------------------------
