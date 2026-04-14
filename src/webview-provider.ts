@@ -151,7 +151,11 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       }
 
       case 'cancel': {
-        this.bridge.notify('cancel', {});
+        // Forward the sessionId so the gem's CancelHandler can find the
+        // right agent thread in PromptHandler#@sessions. Without it the
+        // handler returns "Missing sessionId" and the notify is dropped.
+        const { sessionId } = (message.payload ?? {}) as Record<string, unknown>;
+        this.bridge.notify('cancel', { sessionId: sessionId as string });
         break;
       }
 
