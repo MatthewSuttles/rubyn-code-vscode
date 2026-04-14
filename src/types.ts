@@ -207,3 +207,118 @@ export interface RubynSession {
   budget: number;
   spent: number;
 }
+
+// ---------------------------------------------------------------------------
+// IDE RPC types — server → client requests (bidirectional)
+// ---------------------------------------------------------------------------
+
+export interface IdeOpenDiffParams {
+  path: string;
+  proposedContent: string;
+  title?: string;
+}
+
+export interface IdeOpenDiffResult {
+  accepted: boolean;
+}
+
+export interface IdeReadSelectionResult {
+  text: string;
+  file?: string;
+  startLine?: number;
+  endLine?: number;
+  language?: string;
+}
+
+export interface IdeReadActiveFileResult {
+  path: string;
+  content: string;
+  language: string;
+}
+
+export interface IdeSaveFileParams {
+  path: string;
+}
+
+export interface IdeSaveFileResult {
+  saved: boolean;
+}
+
+export interface IdeNavigateToParams {
+  path: string;
+  line?: number;
+  column?: number;
+}
+
+export interface IdeGetOpenTabsResult {
+  tabs: Array<{
+    path: string;
+    language?: string;
+    isDirty: boolean;
+  }>;
+}
+
+export interface IdeGetDiagnosticsParams {
+  file?: string;
+}
+
+export interface IdeGetDiagnosticsResult {
+  diagnostics: Array<{
+    file: string;
+    line: number;
+    column: number;
+    severity: 'error' | 'warning' | 'info' | 'hint';
+    message: string;
+    source?: string;
+  }>;
+}
+
+export interface IdeGetWorkspaceSymbolsParams {
+  query: string;
+}
+
+export interface IdeGetWorkspaceSymbolsResult {
+  symbols: Array<{
+    name: string;
+    kind: string;
+    file: string;
+    line?: number;
+    containerName?: string;
+  }>;
+}
+
+// ---------------------------------------------------------------------------
+// Session management types
+// ---------------------------------------------------------------------------
+
+export interface SessionListResult {
+  sessions: Array<{
+    id: string;
+    title?: string;
+    updatedAt: string;
+    messageCount?: number;
+  }>;
+}
+
+export interface SessionResumeResult {
+  resumed: boolean;
+  sessionId: string;
+  messages: Array<{ role: string; content: string }>;
+}
+
+export interface SessionForkResult {
+  forked: boolean;
+  newSessionId: string;
+}
+
+// ---------------------------------------------------------------------------
+// Permission mode
+// ---------------------------------------------------------------------------
+
+export type PermissionMode =
+  | 'default'
+  | 'accept_edits'
+  | 'plan_only'
+  | 'auto'
+  | 'dont_ask'
+  | 'bypass';

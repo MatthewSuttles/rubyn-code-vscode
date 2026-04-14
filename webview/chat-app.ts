@@ -222,7 +222,18 @@ export class ChatApp extends LitElement {
   }
 
   private _onCancel() {
-    this.vscode.postMessage({ type: 'cancel' });
+    // Send the sessionId so the gem can target the right agent thread.
+    // Without it, CancelHandler bails with "Missing sessionId" silently.
+    this.vscode.postMessage({
+      type: 'cancel',
+      payload: { sessionId: this.sessionId },
+    });
+
+    // Optimistically finalize any in-flight streaming message and flip
+    // status so the Cancel button disappears immediately. The gem will
+    // follow up with `agent/status: cancelled` once the thread unwinds.
+    this._finalizeStreaming();
+    this.agentStatus = 'idle';
   }
 
   private _onNewSession() {
@@ -502,9 +513,10 @@ export class ChatApp extends LitElement {
     const status = payload.status as AgentStatus;
     this.agentStatus = status;
 
-    if (status === 'done') {
+    if (status === 'done' || status === 'cancelled' || status === 'error') {
       this._finalizeStreaming();
-      // Reset to idle after a short delay.
+      // Reset to idle after a short delay so the user can see the
+      // terminal state flash before the input returns.
       setTimeout(() => {
         this.agentStatus = 'idle';
       }, 300);

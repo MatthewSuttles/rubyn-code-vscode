@@ -174,10 +174,19 @@
           "description": "Token count that triggers context compaction.",
           "order": 6
         },
-        "rubyn-code.yoloMode": {
-          "type": "boolean",
-          "default": false,
-          "description": "Auto-approve all tool calls without confirmation.",
+        "rubyn-code.permissionMode": {
+          "type": "string",
+          "default": "default",
+          "enum": ["default", "accept_edits", "plan_only", "auto", "dont_ask", "bypass"],
+          "enumDescriptions": [
+            "Approve every mutating tool and file edit",
+            "Auto-approve file edits, prompt for other mutations",
+            "Read-only mode — block all writes",
+            "Auto-approve everything except deny-listed",
+            "Auto-deny all mutations unless pre-approved",
+            "No checks — auto-approve everything"
+          ],
+          "description": "Permission mode for tool execution.",
           "order": 7
         }
       }
@@ -206,6 +215,8 @@
     "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
+    "ajv": "^8.0.0",
+    "ajv-formats": "^3.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/vscode": "^1.98.0",

@@ -71,7 +71,7 @@ describe('DiffProvider', () => {
   beforeEach(() => {
     __resetAll();
     env = createTestEnv();
-    __setConfig('rubyn-code', { yoloMode: false });
+    __setConfig('rubyn-code', { permissionMode: 'default' });
     (vscode.window.tabGroups as any).all = [];
   });
 
@@ -337,12 +337,12 @@ describe('DiffProvider', () => {
   });
 
   // -----------------------------------------------------------------------
-  // Yolo mode
+  // Bypass permission mode (formerly yolo)
   // -----------------------------------------------------------------------
 
-  describe('yolo mode', () => {
-    it('auto-accepts modify without opening a diff editor', async () => {
-      __setConfig('rubyn-code', { yoloMode: true });
+  describe('bypass permission mode', () => {
+    it('auto-accepts modify without user interaction', async () => {
+      __setConfig('rubyn-code', { permissionMode: 'bypass' });
 
       (vscode.workspace.openTextDocument as any).mockResolvedValue({
         getText: () => 'original',
@@ -377,7 +377,7 @@ describe('DiffProvider', () => {
     });
 
     it('auto-accepts create without user interaction', async () => {
-      __setConfig('rubyn-code', { yoloMode: true });
+      __setConfig('rubyn-code', { permissionMode: 'bypass' });
 
       env.serverNotify('file/create', {
         editId: 'yolo-create-1',
@@ -397,8 +397,8 @@ describe('DiffProvider', () => {
       expect((msg!.params as any).accepted).toBe(true);
     });
 
-    it('auto-accepts delete without prompting', async () => {
-      __setConfig('rubyn-code', { yoloMode: true });
+    it('auto-accepts delete without user interaction', async () => {
+      __setConfig('rubyn-code', { permissionMode: 'bypass' });
 
       env.serverNotify('file/edit', {
         editId: 'yolo-del-1',

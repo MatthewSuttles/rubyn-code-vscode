@@ -6,10 +6,11 @@ import * as vscode from 'vscode';
 import { Bridge } from './bridge';
 import { ProcessManager } from './process-manager';
 import { ContextProvider } from './context-provider';
-import { createStatusBar } from './status-bar';
+import { createStatusBar, StatusBar } from './status-bar';
 import { createModelSelector } from './model-selector';
 import { ChatWebviewProvider } from './webview-provider';
 import { DiffProvider } from './diff-provider';
+import { registerIdeRpcHandlers } from './ide-rpc-handler';
 import { InitializeParams, InitializeResult, ConfigGetAllResult } from './types';
 
 // ---------------------------------------------------------------------------
@@ -57,6 +58,10 @@ export async function activate(
   bridge = new Bridge(child.stdin, child.stdout);
   processManager.setBridge(bridge);
   context.subscriptions.push({ dispose: () => bridge?.dispose() });
+
+  // Register bidirectional IDE RPC handlers (server → client requests).
+  const ideRpcDisposable = registerIdeRpcHandlers(bridge);
+  context.subscriptions.push(ideRpcDisposable);
 
   bridge.on('error', (err: Error) => {
     outputChannel.appendLine(`[bridge error] ${err.message}`);
@@ -322,13 +327,45 @@ export async function activate(
   );
 
   // 7. Register status bar.
+  let statusBar: StatusBar | undefined;
   try {
-    const statusBarDisposable = createStatusBar(bridge);
-    context.subscriptions.push(statusBarDisposable);
+    statusBar = createStatusBar(bridge);
+    context.subscriptions.push(statusBar);
   } catch {
     // Status bar module may not be available yet (being built by another agent).
     outputChannel.appendLine(
       'Status bar module not available — skipping status bar registration.',
+    );
+  }
+
+  // 7b. Wire status bar badge indicators.
+  if (statusBar) {
+    // Blue dot: permission pending when a tool requires approval.
+    bridge.on('tool/use', (params: Record<string, unknown> | undefined) => {
+      if (params && params.requiresApproval === true) {
+        statusBar!.setPermissionPending(true);
+      }
+    });
+
+    // Clear permission pending when the user approves/denies via tool/approve.
+    bridge.on('tool/result', () => {
+      statusBar!.setPermissionPending(false);
+    });
+
+    // Orange dot: task completed while panel is hidden.
+    bridge.on('agent/status', (params: Record<string, unknown> | undefined) => {
+      if (params && params.state === 'done' && !chatProvider.visible) {
+        statusBar!.setCompletedHidden(true);
+      }
+    });
+
+    // Clear completed-hidden badge when the panel becomes visible.
+    context.subscriptions.push(
+      chatProvider.onDidChangeVisibility((visible) => {
+        if (visible) {
+          statusBar!.setCompletedHidden(false);
+        }
+      }),
     );
   }
 

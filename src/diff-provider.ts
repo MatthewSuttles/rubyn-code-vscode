@@ -5,7 +5,8 @@
  * opens VS Code's native diff editor (modifications) or preview tab
  * (new files), and surfaces per-edit Accept / Reject actions as CodeLens
  * at the top of the proposed document. Deletes get a modal confirm (no
- * diff view is appropriate). In yolo mode every edit is auto-accepted.
+ * diff view is appropriate). In bypass/auto/accept_edits permission modes
+ * every edit is auto-accepted.
  *
  * Why CodeLens rather than a modal dialog: every major code-agent UX
  * (Cursor, Copilot Chat, Continue.dev) puts accept/reject on the diff
@@ -234,6 +235,23 @@ export class DiffProvider implements vscode.Disposable {
 
   private async handleModify(edit: FileEditParams): Promise<void> {
     const originalUri = vscode.Uri.file(edit.path);
+
+    // If the file doesn't exist, fall through to handleCreate — the model
+    // may have sent type:'modify' for a file that should be created. Without
+    // this guard `vscode.diff` blows up with "file was not found".
+    try {
+      await vscode.workspace.fs.stat(originalUri);
+    } catch {
+      console.warn(`[DiffProvider] file not found, falling back to create: ${edit.path}`);
+      await this.handleCreate({
+        editId: edit.editId,
+        path: edit.path,
+        type: 'create',
+        content: edit.content ?? '',
+      });
+      return;
+    }
+
     const proposedUri = vscode.Uri.parse(
       `${PROPOSED_SCHEME}://rubyn/proposed-${this.seq++}/${encodeURIComponent(edit.path)}?editId=${encodeURIComponent(edit.editId)}`,
     );
@@ -257,7 +275,7 @@ export class DiffProvider implements vscode.Disposable {
     };
     this.pending.set(edit.editId, pending);
 
-    if (this.isYoloMode()) {
+    if (this.isAutoApproveEdits()) {
       this.flashNotification(`Rubyn auto-applied changes to ${this.basename(edit.path)}`);
       await this.acceptModify(pending);
       return;
@@ -310,7 +328,7 @@ export class DiffProvider implements vscode.Disposable {
     };
     this.pending.set(edit.editId, pending);
 
-    if (this.isYoloMode()) {
+    if (this.isAutoApproveEdits()) {
       this.flashNotification(`Rubyn auto-created ${this.basename(filePath)}`);
       await this.acceptCreate(pending);
       return;
@@ -353,7 +371,7 @@ export class DiffProvider implements vscode.Disposable {
     };
     this.pending.set(edit.editId, pending);
 
-    if (this.isYoloMode()) {
+    if (this.isAutoApproveEdits()) {
       this.flashNotification(`Rubyn auto-deleted ${this.basename(edit.path)}`);
       await this.acceptDelete(pending);
       return;
@@ -551,10 +569,12 @@ export class DiffProvider implements vscode.Disposable {
     }
   }
 
-  /** Send the acceptEdit response back to the CLI process. */
+  /** Send the acceptEdit request back to the CLI process. */
   private sendAcceptEdit(editId: string, accepted: boolean): void {
     const params: AcceptEditParams = { editId, accepted };
-    this.bridge.notify('acceptEdit', params as unknown as Record<string, unknown>);
+    this.bridge.request('acceptEdit', params as unknown as Record<string, unknown>).catch((err: Error) => {
+      this.log.appendLine(`[acceptEdit] failed for ${editId}: ${err.message}`);
+    });
   }
 
   private cleanupEdit(pending: PendingEdit): void {
@@ -576,13 +596,12 @@ export class DiffProvider implements vscode.Disposable {
     return p.split('/').pop() ?? p;
   }
 
-  /** Check the user's yolo-mode setting. */
-  private isYoloMode(): boolean {
-    return (
-      vscode.workspace
-        .getConfiguration('rubyn-code')
-        .get<boolean>('yoloMode', false)
-    );
+  /** Check if the current permission mode auto-approves edits. */
+  private isAutoApproveEdits(): boolean {
+    const mode = vscode.workspace
+      .getConfiguration('rubyn-code')
+      .get<string>('permissionMode', 'default');
+    return mode === 'bypass' || mode === 'auto' || mode === 'accept_edits';
   }
 
   /** Show a brief auto-dismiss notification (for yolo mode). */

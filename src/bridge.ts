@@ -20,6 +20,9 @@ const REQUEST_TIMEOUT_MS = 30_000;
 /** Callback shape for notification listeners. */
 type NotificationListener = (params: Record<string, unknown> | undefined) => void;
 
+/** Handler for server-initiated requests (server → client). */
+type RequestHandler = (params: Record<string, unknown>) => Promise<unknown> | unknown;
+
 interface PendingRequest {
   resolve: (result: unknown) => void;
   reject: (error: Error) => void;
@@ -45,6 +48,9 @@ export class Bridge extends EventEmitter {
 
   /** Notification listeners keyed by method name. */
   private notificationListeners = new Map<string, Set<NotificationListener>>();
+
+  /** Handlers for server-initiated requests (bidirectional RPC). */
+  private requestHandlers = new Map<string, RequestHandler>();
 
   /** Partial line buffer for stdout parsing. */
   private buffer = '';
@@ -162,6 +168,34 @@ export class Bridge extends EventEmitter {
   }
 
   /**
+   * Register a handler for server-initiated requests (bidirectional RPC).
+   * When the server sends a request with the given method, the handler is called
+   * and its return value is sent back as the response.
+   */
+  onRequest(method: string, handler: RequestHandler): this {
+    this.requestHandlers.set(method, handler);
+    return this;
+  }
+
+  /**
+   * Send a JSON-RPC response back to the server for a server-initiated request.
+   */
+  respondToRequest(id: number | string, result: unknown): void {
+    const msg = { jsonrpc: '2.0' as const, id, result };
+    const line = JSON.stringify(msg) + '\n';
+    this.stdin.write(line);
+  }
+
+  /**
+   * Send a JSON-RPC error response back to the server for a server-initiated request.
+   */
+  respondWithError(id: number | string, code: number, message: string): void {
+    const msg = { jsonrpc: '2.0' as const, id, error: { code, message } };
+    const line = JSON.stringify(msg) + '\n';
+    this.stdin.write(line);
+  }
+
+  /**
    * Tear down the bridge: reject all pending requests, remove all listeners,
    * and stop reading from stdout.
    */
@@ -178,8 +212,9 @@ export class Bridge extends EventEmitter {
       this.pending.delete(id);
     }
 
-    // Clear notification listeners.
+    // Clear notification and request listeners.
     this.notificationListeners.clear();
+    this.requestHandlers.clear();
 
     // Remove our data/end listeners from stdout.
     this.stdout.removeAllListeners('data');
@@ -231,7 +266,13 @@ export class Bridge extends EventEmitter {
       return;
     }
 
-    // Response (has numeric id)
+    // Server-initiated request (has both method and id) — bidirectional RPC
+    if (typeof msg.method === 'string' && (typeof msg.id === 'number' || typeof msg.id === 'string')) {
+      this.handleServerRequest(msg as unknown as RpcRequest);
+      return;
+    }
+
+    // Response (has numeric id, no method)
     if (typeof msg.id === 'number') {
       this.handleResponse(msg as unknown as RpcResponse);
       return;
@@ -244,6 +285,23 @@ export class Bridge extends EventEmitter {
     }
 
     this.emit('error', new Error(`Unrecognised JSON-RPC message: ${line.slice(0, 200)}`));
+  }
+
+  /** Handle a server-initiated request by calling the registered handler. */
+  private async handleServerRequest(req: RpcRequest): Promise<void> {
+    const handler = this.requestHandlers.get(req.method);
+    if (!handler) {
+      this.respondWithError(req.id, -32601, `Method not found: ${req.method}`);
+      return;
+    }
+
+    try {
+      const result = await handler(req.params ?? {});
+      this.respondToRequest(req.id, result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.respondWithError(req.id, -32603, message);
+    }
   }
 
   /** Resolve or reject a pending request based on the server's response. */
