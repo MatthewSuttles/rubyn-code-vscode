@@ -149,19 +149,36 @@ export class DiffProvider implements vscode.Disposable {
   private readonly lensProvider: ProposedCodeLensProvider;
   private readonly pending = new Map<string, PendingEdit>();
   private readonly disposables: vscode.Disposable[] = [];
+  private readonly log: vscode.OutputChannel;
 
   private seq = 0;
 
-  constructor(bridge: Bridge) {
+  constructor(bridge: Bridge, outputChannel?: vscode.OutputChannel) {
     this.bridge = bridge;
     this.contentProvider = new ProposedContentProvider();
     this.lensProvider = new ProposedCodeLensProvider((id) => this.pending.get(id));
+    this.log =
+      outputChannel ?? vscode.window.createOutputChannel('Rubyn Code — Diff');
 
     this.disposables.push(
       vscode.workspace.registerTextDocumentContentProvider(PROPOSED_SCHEME, this.contentProvider),
       vscode.languages.registerCodeLensProvider({ scheme: PROPOSED_SCHEME }, this.lensProvider),
-      vscode.commands.registerCommand(ACCEPT_COMMAND, (editId: string) => this.acceptByEditId(editId)),
-      vscode.commands.registerCommand(REJECT_COMMAND, (editId: string) => this.rejectByEditId(editId)),
+      vscode.commands.registerCommand(ACCEPT_COMMAND, (editId: string) => {
+        this.log.appendLine(`[accept] command fired editId=${editId}`);
+        return this.acceptByEditId(editId).catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          this.log.appendLine(`[accept] FAILED editId=${editId}: ${msg}`);
+          void vscode.window.showErrorMessage(`Rubyn accept failed: ${msg}`);
+        });
+      }),
+      vscode.commands.registerCommand(REJECT_COMMAND, (editId: string) => {
+        this.log.appendLine(`[reject] command fired editId=${editId}`);
+        return this.rejectByEditId(editId).catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          this.log.appendLine(`[reject] FAILED editId=${editId}: ${msg}`);
+          void vscode.window.showErrorMessage(`Rubyn reject failed: ${msg}`);
+        });
+      }),
       // If the user closes the diff tab without clicking either CodeLens,
       // treat it as a rejection so the agent doesn't sit waiting for 60s.
       vscode.workspace.onDidCloseTextDocument((doc) => this.onDocumentClosed(doc)),
@@ -251,16 +268,22 @@ export class DiffProvider implements vscode.Disposable {
   }
 
   private async acceptModify(pending: PendingModify): Promise<void> {
-    const document = await vscode.workspace.openTextDocument(pending.originalUri);
-    const fullRange = new vscode.Range(
-      document.positionAt(0),
-      document.positionAt(document.getText().length),
-    );
-
-    const workspaceEdit = new vscode.WorkspaceEdit();
-    workspaceEdit.replace(pending.originalUri, fullRange, pending.proposedContent);
-    await vscode.workspace.applyEdit(workspaceEdit);
-    await document.save();
+    // Direct fs write is more reliable than applyEdit + save: it doesn't
+    // depend on the document being open in an editor, doesn't race with
+    // the user's own edits in the same buffer, and fails loudly if the
+    // path is wrong. VS Code's file watcher picks up the change and
+    // refreshes any open editor on the same URI automatically.
+    try {
+      const encoded = new TextEncoder().encode(pending.proposedContent);
+      await vscode.workspace.fs.writeFile(pending.originalUri, encoded);
+      this.log.appendLine(`[accept] wrote ${pending.filePath} (${encoded.byteLength} bytes)`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log.appendLine(`[accept] fs.writeFile failed for ${pending.filePath}: ${msg}`);
+      this.sendAcceptEdit(pending.editId, false);
+      this.cleanupEdit(pending);
+      throw err;
+    }
 
     this.sendAcceptEdit(pending.editId, true);
     await this.closeDiffTab(pending.proposedUri);
@@ -384,7 +407,11 @@ export class DiffProvider implements vscode.Disposable {
 
   async acceptByEditId(editId: string): Promise<void> {
     const pending = this.pending.get(editId);
-    if (!pending) return;
+    if (!pending) {
+      this.log.appendLine(`[accept] no pending edit for ${editId}`);
+      return;
+    }
+    this.log.appendLine(`[accept] applying ${pending.kind} → ${pending.filePath}`);
     switch (pending.kind) {
       case 'modify':
         await this.acceptModify(pending);
@@ -396,11 +423,17 @@ export class DiffProvider implements vscode.Disposable {
         await this.acceptDelete(pending);
         break;
     }
+    this.log.appendLine(`[accept] done ${editId}`);
   }
 
   async rejectByEditId(editId: string): Promise<void> {
     const pending = this.pending.get(editId);
-    if (pending) await this.rejectEdit(pending);
+    if (!pending) {
+      this.log.appendLine(`[reject] no pending edit for ${editId}`);
+      return;
+    }
+    this.log.appendLine(`[reject] discarding ${pending.kind} → ${pending.filePath}`);
+    await this.rejectEdit(pending);
   }
 
   // -----------------------------------------------------------------------

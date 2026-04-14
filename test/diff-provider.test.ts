@@ -178,14 +178,12 @@ describe('DiffProvider', () => {
 
   describe('accept modify', () => {
     it('writes proposed content and sends acceptEdit when user clicks Accept', async () => {
-      const mockDoc = {
+      (vscode.workspace.openTextDocument as any).mockResolvedValue({
         getText: () => 'original content',
         positionAt: (offset: number) => new Position(0, offset),
         uri: Uri.file('/workspace/app/models/user.rb'),
         save: vi.fn(async () => true),
-      };
-
-      (vscode.workspace.openTextDocument as any).mockResolvedValue(mockDoc);
+      });
 
       env.serverNotify('file/edit', {
         editId: 'mod-1',
@@ -197,8 +195,13 @@ describe('DiffProvider', () => {
       await new Promise((r) => setTimeout(r, 50));
       await env.clickAccept('mod-1');
 
-      expect(vscode.workspace.applyEdit).toHaveBeenCalled();
-      expect(mockDoc.save).toHaveBeenCalled();
+      // We write the proposed content directly via fs.writeFile, which is
+      // more reliable than applyEdit + save (doesn't depend on the doc
+      // being open in an editor and fails loudly if the path is wrong).
+      expect(vscode.workspace.fs.writeFile).toHaveBeenCalledWith(
+        expect.objectContaining({ fsPath: '/workspace/app/models/user.rb' }),
+        expect.any(Uint8Array),
+      );
 
       const sent = env.readBridgeOutput();
       const acceptMsg = sent.find(
@@ -234,7 +237,11 @@ describe('DiffProvider', () => {
       await new Promise((r) => setTimeout(r, 50));
       await env.clickReject('mod-2');
 
-      expect(vscode.workspace.applyEdit).not.toHaveBeenCalled();
+      // Reject must not write the file at all.
+      const writeCalls = (vscode.workspace.fs.writeFile as any).mock.calls.filter(
+        ([uri]: [any]) => uri.fsPath === '/workspace/app/models/user.rb',
+      );
+      expect(writeCalls.length).toBe(0);
 
       const sent = env.readBridgeOutput();
       const rejectMsg = sent.find(
@@ -337,14 +344,12 @@ describe('DiffProvider', () => {
     it('auto-accepts modify without opening a diff editor', async () => {
       __setConfig('rubyn-code', { yoloMode: true });
 
-      const mockDoc = {
+      (vscode.workspace.openTextDocument as any).mockResolvedValue({
         getText: () => 'original',
         positionAt: (offset: number) => new Position(0, offset),
         uri: Uri.file('/workspace/app/models/user.rb'),
         save: vi.fn(async () => true),
-      };
-
-      (vscode.workspace.openTextDocument as any).mockResolvedValue(mockDoc);
+      });
 
       env.serverNotify('file/edit', {
         editId: 'yolo-1',
@@ -361,7 +366,7 @@ describe('DiffProvider', () => {
         expect.anything(),
         expect.anything(),
       );
-      expect(vscode.workspace.applyEdit).toHaveBeenCalled();
+      expect(vscode.workspace.fs.writeFile).toHaveBeenCalled();
 
       const sent = env.readBridgeOutput();
       const msg = sent.find(
