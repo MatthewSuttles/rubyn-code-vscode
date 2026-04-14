@@ -133,9 +133,16 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
 
       case 'approveToolUse': {
         const { requestId, approved } = (message.payload ?? {}) as Record<string, unknown>;
-        this.bridge.notify('tool/approve', {
+        // The gem's JSON-RPC handler is registered at "approveToolUse"
+        // (see lib/rubyn_code/ide/handlers.rb). The earlier method name
+        // "tool/approve" doesn't match any handler — the notification
+        // was being silently dropped, so clicking Approve/Deny in the
+        // chat card fired a request into the void.
+        this.bridge.request('approveToolUse', {
           requestId: requestId as string,
           approved: approved as boolean,
+        }).catch((err: Error) => {
+          this.postMessage({ type: 'error', payload: { message: err.message } });
         });
         break;
       }
