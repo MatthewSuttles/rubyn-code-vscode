@@ -61,30 +61,49 @@ function highlightCode(code: string, lang: string): string {
   const escaped = escapeHtml(code);
   if (!kw) return escaped;
 
-  // Highlight strings first
-  let result = escaped
-    .replace(/(["'`])(?:(?=(\\?))\2.)*?\1/g, '<span class="hl-str">$&</span>');
+  // Tokenize comments and strings first, replacing them with placeholders so
+  // the subsequent keyword/number regex only runs on plain text. Without this,
+  // a keyword like `class` would match inside the attribute of an already-
+  // inserted `<span class="hl-cmt">`, mangling the HTML into something like
+  // `<span <span class="hl-kw">class</span>="hl-cmt">`, and browsers would
+  // render the leftover `="hl-cmt">` as literal text.
+  const tokens: string[] = [];
+  const stash = (html: string): string => {
+    const idx = tokens.length;
+    tokens.push(html);
+    return `\u0000T${idx}\u0000`;
+  };
 
-  // Highlight comments (# for ruby/shell/yaml, // for js)
+  let result = escaped;
+
+  // Strings (quoted single/double/backtick).
+  result = result.replace(/(["'`])(?:(?=(\\?))\2.)*?\1/g, (m) =>
+    stash(`<span class="hl-str">${m}</span>`),
+  );
+
+  // Comments — syntax varies by language.
   const l = lang.toLowerCase();
-  if (l === 'ruby' || l === 'rb' || l === 'bash' || l === 'sh' || l === 'shell' || l === 'zsh' || l === 'yaml' || l === 'yml') {
-    result = result.replace(/(^|[\n])(\s*)(#[^\n]*)/g, '$1$2<span class="hl-cmt">$3</span>');
-  } else if (l === 'javascript' || l === 'js' || l === 'typescript' || l === 'ts' || l === 'jsx' || l === 'tsx') {
-    result = result.replace(/(\/\/[^\n]*)/g, '<span class="hl-cmt">$1</span>');
+  if (['ruby', 'rb', 'bash', 'sh', 'shell', 'zsh', 'yaml', 'yml'].includes(l)) {
+    result = result.replace(
+      /(^|[\n])(\s*)(#[^\n]*)/g,
+      (_m, p1, p2, p3) => `${p1}${p2}${stash(`<span class="hl-cmt">${p3}</span>`)}`,
+    );
+  } else if (['javascript', 'js', 'typescript', 'ts', 'jsx', 'tsx'].includes(l)) {
+    result = result.replace(/(\/\/[^\n]*)/g, (m) => stash(`<span class="hl-cmt">${m}</span>`));
   } else if (l === 'sql') {
-    result = result.replace(/(--[^\n]*)/g, '<span class="hl-cmt">$1</span>');
+    result = result.replace(/(--[^\n]*)/g, (m) => stash(`<span class="hl-cmt">${m}</span>`));
   }
 
-  // Highlight keywords (whole word only)
-  result = result.replace(/\b([a-zA-Z_]+)\b/g, (match) => {
-    if (kw.has(match)) return `<span class="hl-kw">${match}</span>`;
-    return match;
-  });
+  // Keywords (whole word only) — now safe to run, strings/comments are stashed.
+  result = result.replace(/\b([a-zA-Z_]+)\b/g, (match) =>
+    kw.has(match) ? `<span class="hl-kw">${match}</span>` : match,
+  );
 
-  // Highlight numbers
+  // Numbers.
   result = result.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="hl-num">$1</span>');
 
-  return result;
+  // Restore stashed strings/comments.
+  return result.replace(/\u0000T(\d+)\u0000/g, (_m, i) => tokens[Number(i)]);
 }
 
 /** Parse markdown text into HTML. Handles fenced code, inline formatting, headers, lists, links. */
@@ -452,6 +471,21 @@ export class ChatMessage extends LitElement {
     .approval-actions button:hover {
       opacity: 0.85;
     }
+
+    .approval-status {
+      margin-top: 8px;
+      font-size: 12px;
+      font-style: italic;
+      opacity: 0.8;
+    }
+
+    .approval-status.approved {
+      color: var(--vscode-testing-iconPassed, #73c991);
+    }
+
+    .approval-status.denied {
+      color: var(--vscode-errorForeground, #f85149);
+    }
   `;
 
   @property({ type: String }) role: MessageRole = 'assistant';
@@ -463,6 +497,7 @@ export class ChatMessage extends LitElement {
   @property({ type: Object }) toolArgs: Record<string, unknown> = {};
   @property({ type: String }) requestId = '';
   @property({ type: Boolean }) requiresApproval = false;
+  @property({ type: String }) approvalState: 'pending' | 'approved' | 'denied' = 'pending';
 
   /* Tool result properties */
   @property({ type: Boolean }) toolSuccess = false;
@@ -495,7 +530,12 @@ export class ChatMessage extends LitElement {
         });
       }
       if (target.classList.contains('btn-approve') || target.classList.contains('btn-deny')) {
+        // Ignore double-clicks once a decision has already been made.
+        if (this.approvalState !== 'pending') return;
         const approved = target.classList.contains('btn-approve');
+        // Optimistic UI: flip state immediately so the buttons disappear and
+        // the card shows "Approved / running…" or "Denied" right away.
+        this.approvalState = approved ? 'approved' : 'denied';
         this.dispatchEvent(
           new CustomEvent('tool-approval', {
             detail: { requestId: this.requestId, approved },
@@ -533,14 +573,28 @@ export class ChatMessage extends LitElement {
           <summary>Arguments</summary>
           <pre>${argsStr}</pre>
         </details>
-        ${this.requiresApproval
-          ? html`
-              <div class="approval-actions">
-                <button class="btn-approve">Allow</button>
-                <button class="btn-deny">Deny</button>
-              </div>
-            `
-          : nothing}
+        ${this._renderApprovalUI()}
+      </div>
+    `;
+  }
+
+  private _renderApprovalUI() {
+    if (!this.requiresApproval) return nothing;
+
+    // Once the user has clicked, hide the buttons and show a status line.
+    // A tool/result card will arrive next to show the actual outcome;
+    // this just confirms the click landed and the request is in flight.
+    if (this.approvalState === 'approved') {
+      return html`<div class="approval-status approved">\u2705 Approved — running…</div>`;
+    }
+    if (this.approvalState === 'denied') {
+      return html`<div class="approval-status denied">\u274C Denied</div>`;
+    }
+
+    return html`
+      <div class="approval-actions">
+        <button class="btn-approve">Allow</button>
+        <button class="btn-deny">Deny</button>
       </div>
     `;
   }

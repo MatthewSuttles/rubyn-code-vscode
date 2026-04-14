@@ -54,8 +54,42 @@
       {
         "command": "rubyn-code.selectModel",
         "title": "Rubyn Code: Select Model"
+      },
+      {
+        "command": "rubyn-code.acceptEdit",
+        "title": "Accept Rubyn Edit",
+        "icon": "$(check)"
+      },
+      {
+        "command": "rubyn-code.rejectEdit",
+        "title": "Reject Rubyn Edit",
+        "icon": "$(close)"
       }
     ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "rubyn-code.acceptEdit",
+          "when": "resourceScheme == rubyn-proposed",
+          "group": "navigation@1"
+        },
+        {
+          "command": "rubyn-code.rejectEdit",
+          "when": "resourceScheme == rubyn-proposed",
+          "group": "navigation@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "rubyn-code.acceptEdit",
+          "when": "false"
+        },
+        {
+          "command": "rubyn-code.rejectEdit",
+          "when": "false"
+        }
+      ]
+    },
     "viewsContainers": {
       "activitybar": [
         {

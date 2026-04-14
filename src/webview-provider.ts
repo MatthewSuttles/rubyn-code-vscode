@@ -12,18 +12,22 @@ import { Bridge } from './bridge';
 
 /** Messages the webview can send to the extension host. */
 interface WebviewToExtension {
-  type: 'sendPrompt' | 'approveToolUse' | 'cancel' | 'changeModel' | 'slashCommand';
+  type: 'sendPrompt' | 'approveToolUse' | 'cancel' | 'changeModel' | 'slashCommand' | 'resetSession';
   payload?: Record<string, unknown>;
 }
 
-/** Notification methods forwarded from bridge to webview. */
+/** Notification methods forwarded from bridge to webview.
+ *
+ * Only include methods the gem actually emits — forwarding a dead method
+ * silently queues webview work for notifications that will never arrive.
+ * Verify gem emitters by grepping `@server.notify` under lib/rubyn_code/ide
+ * before adding here.
+ */
 const FORWARDED_NOTIFICATIONS = [
   'stream/text',
-  'stream/codeBlock',
   'tool/use',
   'tool/result',
   'agent/status',
-  'session/cost',
 ] as const;
 
 export class ChatWebviewProvider implements vscode.WebviewViewProvider {
@@ -115,6 +119,19 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  /**
+   * Dispatch a prompt through the chat from an external trigger (command
+   * palette, keybinding, etc). The webview handles the message exactly as
+   * if the user typed it — renders a user bubble, then sends `sendPrompt`
+   * with the webview's own sessionId so it joins the active chat rather
+   * than spawning a fresh session on the gem side.
+   */
+  async sendExternalPrompt(text: string, context: Record<string, unknown>): Promise<void> {
+    // Make sure the chat is visible so the user sees what's happening.
+    await vscode.commands.executeCommand('rubyn-code.chat.focus');
+    this.postMessage({ type: 'external/sendPrompt', payload: { text, context } });
+  }
+
   /** Whether the webview panel is currently visible. */
   get visible(): boolean {
     return this._visible;
@@ -143,9 +160,16 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
 
       case 'approveToolUse': {
         const { requestId, approved } = (message.payload ?? {}) as Record<string, unknown>;
-        this.bridge.notify('tool/approve', {
+        // The gem's JSON-RPC handler is registered at "approveToolUse"
+        // (see lib/rubyn_code/ide/handlers.rb). The earlier method name
+        // "tool/approve" doesn't match any handler — the notification
+        // was being silently dropped, so clicking Approve/Deny in the
+        // chat card fired a request into the void.
+        this.bridge.request('approveToolUse', {
           requestId: requestId as string,
           approved: approved as boolean,
+        }).catch((err: Error) => {
+          this.postMessage({ type: 'error', payload: { message: err.message } });
         });
         break;
       }
@@ -156,6 +180,19 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
         // handler returns "Missing sessionId" and the notify is dropped.
         const { sessionId } = (message.payload ?? {}) as Record<string, unknown>;
         this.bridge.notify('cancel', { sessionId: sessionId as string });
+        break;
+      }
+
+      case 'resetSession': {
+        // User clicked "New Session" in the chat header. Tell the gem to
+        // drop its cached Agent::Conversation for this sessionId so the
+        // next prompt starts with empty message history — parity with the
+        // CLI REPL's `/new` command. The JSON-RPC method name must match
+        // handlers.rb's 'session/reset' registration.
+        const { sessionId } = (message.payload ?? {}) as Record<string, unknown>;
+        if (sessionId) {
+          this.bridge.notify('session/reset', { sessionId: sessionId as string });
+        }
         break;
       }
 

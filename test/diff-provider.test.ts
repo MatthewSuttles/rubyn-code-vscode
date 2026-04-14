@@ -4,10 +4,9 @@ import * as vscode from 'vscode';
 import {
   __resetAll,
   __setConfig,
+  __getRegisteredCommands,
   Uri,
-  Range,
   Position,
-  WorkspaceEdit,
 } from './helpers/mock-vscode';
 import { Bridge } from '../src/bridge';
 import { DiffProvider } from '../src/diff-provider';
@@ -21,9 +20,7 @@ function createTestEnv() {
 
   /** Simulate the server sending a notification via stdout. */
   function serverNotify(method: string, params: Record<string, unknown>): void {
-    stdout.write(
-      JSON.stringify({ jsonrpc: '2.0', method, params }) + '\n',
-    );
+    stdout.write(JSON.stringify({ jsonrpc: '2.0', method, params }) + '\n');
   }
 
   /** Read what bridge wrote to stdin (notifications back to server). */
@@ -34,15 +31,38 @@ function createTestEnv() {
       chunks.push(chunk);
     }
     if (chunks.length === 0) return [];
-    const text = Buffer.concat(chunks).toString('utf-8');
-    return text
+    return Buffer.concat(chunks)
+      .toString('utf-8')
       .trim()
       .split('\n')
       .filter((l) => l.length > 0)
       .map((l) => JSON.parse(l));
   }
 
-  return { bridge, stdin, stdout, diffProvider, serverNotify, readBridgeOutput };
+  /** Simulate the user clicking the ✓ Accept CodeLens. */
+  async function clickAccept(editId: string): Promise<void> {
+    const handler = __getRegisteredCommands().get('rubyn-code.acceptEdit');
+    if (!handler) throw new Error('acceptEdit command not registered');
+    await handler(editId);
+  }
+
+  /** Simulate the user clicking the ✗ Reject CodeLens. */
+  async function clickReject(editId: string): Promise<void> {
+    const handler = __getRegisteredCommands().get('rubyn-code.rejectEdit');
+    if (!handler) throw new Error('rejectEdit command not registered');
+    await handler(editId);
+  }
+
+  return {
+    bridge,
+    stdin,
+    stdout,
+    diffProvider,
+    serverNotify,
+    readBridgeOutput,
+    clickAccept,
+    clickReject,
+  };
 }
 
 describe('DiffProvider', () => {
@@ -51,11 +71,7 @@ describe('DiffProvider', () => {
   beforeEach(() => {
     __resetAll();
     env = createTestEnv();
-
-    // Default: standard permission mode
     __setConfig('rubyn-code', { permissionMode: 'default' });
-
-    // Default tabGroups for closeDiffEditor
     (vscode.window.tabGroups as any).all = [];
   });
 
@@ -70,17 +86,13 @@ describe('DiffProvider', () => {
   // -----------------------------------------------------------------------
 
   describe('modify edit flow', () => {
-    it('opens diff editor and shows accept/reject buttons on file/edit modify', async () => {
-      // Mock opening the original document for buildProposedContent
+    it('opens diff editor and registers the pending edit for CodeLens', async () => {
       (vscode.workspace.openTextDocument as any).mockResolvedValue({
         getText: () => 'line1\nline2\nline3\n',
         positionAt: (offset: number) => new Position(0, offset),
         uri: Uri.file('/workspace/app/models/user.rb'),
         save: vi.fn(async () => true),
       });
-
-      // User clicks "Accept"
-      (vscode.window.showInformationMessage as any).mockResolvedValue('Accept');
 
       env.serverNotify('file/edit', {
         editId: 'edit-1',
@@ -91,7 +103,7 @@ describe('DiffProvider', () => {
 
       await new Promise((r) => setTimeout(r, 50));
 
-      // Should have called vscode.diff
+      // Diff editor opened.
       expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
         'vscode.diff',
         expect.any(Object),
@@ -99,13 +111,11 @@ describe('DiffProvider', () => {
         expect.stringContaining('user.rb'),
       );
 
-      // Should have asked user
-      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
-        expect.stringContaining('user.rb'),
-        { modal: false },
-        'Accept',
-        'Reject',
-      );
+      // Pending edit is tracked — CodeLens will pick it up.
+      expect(env.diffProvider.hasPending('edit-1')).toBe(true);
+
+      // No modal dialog — accept/reject is via CodeLens, not notification.
+      expect(vscode.window.showInformationMessage).not.toHaveBeenCalled();
     });
   });
 
@@ -114,13 +124,11 @@ describe('DiffProvider', () => {
   // -----------------------------------------------------------------------
 
   describe('create edit flow', () => {
-    it('shows preview and accept/reject buttons on file/create', async () => {
+    it('shows preview tab and registers pending edit for CodeLens', async () => {
       (vscode.workspace.openTextDocument as any).mockResolvedValue({
         getText: () => 'new file content',
         uri: Uri.parse('rubyn-proposed://rubyn/new'),
       });
-
-      (vscode.window.showInformationMessage as any).mockResolvedValue('Accept');
 
       env.serverNotify('file/create', {
         editId: 'create-1',
@@ -130,25 +138,16 @@ describe('DiffProvider', () => {
 
       await new Promise((r) => setTimeout(r, 50));
 
-      // Should have shown the preview
       expect(vscode.window.showTextDocument).toHaveBeenCalled();
-
-      // Should have asked user
-      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
-        expect.stringContaining('post.rb'),
-        { modal: false },
-        'Accept',
-        'Reject',
-      );
+      expect(env.diffProvider.hasPending('create-1')).toBe(true);
+      expect(vscode.window.showInformationMessage).not.toHaveBeenCalled();
     });
 
-    it('writes file when user accepts create', async () => {
+    it('writes file when user accepts (via CodeLens click)', async () => {
       (vscode.workspace.openTextDocument as any).mockResolvedValue({
         getText: () => '',
         uri: Uri.parse('rubyn-proposed://rubyn/new'),
       });
-
-      (vscode.window.showInformationMessage as any).mockResolvedValue('Accept');
 
       env.serverNotify('file/create', {
         editId: 'create-2',
@@ -157,14 +156,13 @@ describe('DiffProvider', () => {
       });
 
       await new Promise((r) => setTimeout(r, 50));
+      await env.clickAccept('create-2');
 
-      // File should have been written
       expect(vscode.workspace.fs.writeFile).toHaveBeenCalledWith(
         expect.objectContaining({ fsPath: '/workspace/app/models/comment.rb' }),
         expect.any(Uint8Array),
       );
 
-      // Bridge should have been notified of acceptance
       const sent = env.readBridgeOutput();
       const acceptMsg = sent.find(
         (m) => m.method === 'acceptEdit' && (m.params as any)?.editId === 'create-2',
@@ -175,20 +173,17 @@ describe('DiffProvider', () => {
   });
 
   // -----------------------------------------------------------------------
-  // Accept modify
+  // Accept modify (via CodeLens)
   // -----------------------------------------------------------------------
 
   describe('accept modify', () => {
-    it('writes proposed content and sends acceptEdit to bridge', async () => {
-      const mockDoc = {
+    it('writes proposed content and sends acceptEdit when user clicks Accept', async () => {
+      (vscode.workspace.openTextDocument as any).mockResolvedValue({
         getText: () => 'original content',
         positionAt: (offset: number) => new Position(0, offset),
         uri: Uri.file('/workspace/app/models/user.rb'),
         save: vi.fn(async () => true),
-      };
-
-      (vscode.workspace.openTextDocument as any).mockResolvedValue(mockDoc);
-      (vscode.window.showInformationMessage as any).mockResolvedValue('Accept');
+      });
 
       env.serverNotify('file/edit', {
         editId: 'mod-1',
@@ -198,14 +193,16 @@ describe('DiffProvider', () => {
       });
 
       await new Promise((r) => setTimeout(r, 50));
+      await env.clickAccept('mod-1');
 
-      // WorkspaceEdit.applyEdit should have been called
-      expect(vscode.workspace.applyEdit).toHaveBeenCalled();
+      // We write the proposed content directly via fs.writeFile, which is
+      // more reliable than applyEdit + save (doesn't depend on the doc
+      // being open in an editor and fails loudly if the path is wrong).
+      expect(vscode.workspace.fs.writeFile).toHaveBeenCalledWith(
+        expect.objectContaining({ fsPath: '/workspace/app/models/user.rb' }),
+        expect.any(Uint8Array),
+      );
 
-      // Document should have been saved
-      expect(mockDoc.save).toHaveBeenCalled();
-
-      // Bridge notified
       const sent = env.readBridgeOutput();
       const acceptMsg = sent.find(
         (m) => m.method === 'acceptEdit' && (m.params as any)?.editId === 'mod-1',
@@ -213,25 +210,22 @@ describe('DiffProvider', () => {
       expect(acceptMsg).toBeDefined();
       expect((acceptMsg!.params as any).accepted).toBe(true);
 
-      // Pending should be cleared
       expect(env.diffProvider.hasPending('mod-1')).toBe(false);
     });
   });
 
   // -----------------------------------------------------------------------
-  // Reject modify
+  // Reject modify (via CodeLens)
   // -----------------------------------------------------------------------
 
   describe('reject modify', () => {
-    it('sends acceptEdit with false and does not write file', async () => {
+    it('sends acceptEdit=false and does not write when user clicks Reject', async () => {
       (vscode.workspace.openTextDocument as any).mockResolvedValue({
         getText: () => 'original content',
         positionAt: (offset: number) => new Position(0, offset),
         uri: Uri.file('/workspace/app/models/user.rb'),
         save: vi.fn(async () => true),
       });
-
-      (vscode.window.showInformationMessage as any).mockResolvedValue('Reject');
 
       env.serverNotify('file/edit', {
         editId: 'mod-2',
@@ -241,11 +235,14 @@ describe('DiffProvider', () => {
       });
 
       await new Promise((r) => setTimeout(r, 50));
+      await env.clickReject('mod-2');
 
-      // applyEdit should NOT have been called (reject = no write)
-      expect(vscode.workspace.applyEdit).not.toHaveBeenCalled();
+      // Reject must not write the file at all.
+      const writeCalls = (vscode.workspace.fs.writeFile as any).mock.calls.filter(
+        ([uri]: [any]) => uri.fsPath === '/workspace/app/models/user.rb',
+      );
+      expect(writeCalls.length).toBe(0);
 
-      // Bridge notified with accepted=false
       const sent = env.readBridgeOutput();
       const rejectMsg = sent.find(
         (m) => m.method === 'acceptEdit' && (m.params as any)?.editId === 'mod-2',
@@ -256,7 +253,7 @@ describe('DiffProvider', () => {
   });
 
   // -----------------------------------------------------------------------
-  // Delete flow
+  // Delete flow — still uses a modal (no diff view to hang a CodeLens on)
   // -----------------------------------------------------------------------
 
   describe('delete flow', () => {
@@ -273,18 +270,16 @@ describe('DiffProvider', () => {
 
       expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(
         expect.stringContaining('old.rb'),
-        { modal: false },
+        expect.objectContaining({ modal: true }),
         'Accept',
         'Reject',
       );
-
-      // File should have been deleted
       expect(vscode.workspace.fs.delete).toHaveBeenCalledWith(
         expect.objectContaining({ fsPath: '/workspace/app/models/old.rb' }),
       );
     });
 
-    it('sends acceptEdit false when delete is rejected', async () => {
+    it('sends acceptEdit=false when delete is rejected', async () => {
       (vscode.window.showWarningMessage as any).mockResolvedValue('Reject');
 
       env.serverNotify('file/edit', {
@@ -312,18 +307,12 @@ describe('DiffProvider', () => {
 
   describe('pending tracking', () => {
     it('tracks multiple pending edits by editId', async () => {
-      // Set up mocks so the edit handlers don't resolve (user hasn't responded)
       (vscode.workspace.openTextDocument as any).mockResolvedValue({
         getText: () => '',
         positionAt: () => new Position(0, 0),
         uri: Uri.file('/test'),
         save: vi.fn(),
       });
-
-      // Never resolve the info message — edit stays pending
-      (vscode.window.showInformationMessage as any).mockReturnValue(
-        new Promise(() => {}),
-      );
 
       env.serverNotify('file/edit', {
         editId: 'p1',
@@ -355,14 +344,12 @@ describe('DiffProvider', () => {
     it('auto-accepts modify without user interaction', async () => {
       __setConfig('rubyn-code', { permissionMode: 'bypass' });
 
-      const mockDoc = {
+      (vscode.workspace.openTextDocument as any).mockResolvedValue({
         getText: () => 'original',
         positionAt: (offset: number) => new Position(0, offset),
         uri: Uri.file('/workspace/app/models/user.rb'),
         save: vi.fn(async () => true),
-      };
-
-      (vscode.workspace.openTextDocument as any).mockResolvedValue(mockDoc);
+      });
 
       env.serverNotify('file/edit', {
         editId: 'yolo-1',
@@ -373,20 +360,14 @@ describe('DiffProvider', () => {
 
       await new Promise((r) => setTimeout(r, 50));
 
-      // Should NOT have shown the info message dialog
-      // (it uses showInformationMessage for flash notification, but not modal accept/reject)
-      // The diff editor should NOT have been opened
       expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith(
         'vscode.diff',
         expect.anything(),
         expect.anything(),
         expect.anything(),
       );
+      expect(vscode.workspace.fs.writeFile).toHaveBeenCalled();
 
-      // Should have applied the edit
-      expect(vscode.workspace.applyEdit).toHaveBeenCalled();
-
-      // Bridge notified with accepted=true
       const sent = env.readBridgeOutput();
       const msg = sent.find(
         (m) => m.method === 'acceptEdit' && (m.params as any)?.editId === 'yolo-1',
@@ -406,7 +387,6 @@ describe('DiffProvider', () => {
 
       await new Promise((r) => setTimeout(r, 50));
 
-      // File should have been written
       expect(vscode.workspace.fs.writeFile).toHaveBeenCalled();
 
       const sent = env.readBridgeOutput();
@@ -429,12 +409,7 @@ describe('DiffProvider', () => {
       await new Promise((r) => setTimeout(r, 50));
 
       expect(vscode.workspace.fs.delete).toHaveBeenCalled();
-      expect(vscode.window.showWarningMessage).not.toHaveBeenCalledWith(
-        expect.anything(),
-        { modal: false },
-        'Accept',
-        'Reject',
-      );
+      expect(vscode.window.showWarningMessage).not.toHaveBeenCalled();
     });
   });
 
@@ -451,10 +426,6 @@ describe('DiffProvider', () => {
         save: vi.fn(),
       });
 
-      (vscode.window.showInformationMessage as any).mockReturnValue(
-        new Promise(() => {}),
-      );
-
       env.serverNotify('file/edit', {
         editId: 'disp-1',
         path: '/workspace/a.rb',
@@ -467,10 +438,8 @@ describe('DiffProvider', () => {
 
       env.diffProvider.dispose();
 
-      // After dispose, pending should be cleared
       expect(env.diffProvider.pendingCount).toBe(0);
 
-      // Bridge should have been notified with accepted=false for each pending
       const sent = env.readBridgeOutput();
       const rejectMsg = sent.find(
         (m) => m.method === 'acceptEdit' && (m.params as any)?.editId === 'disp-1',
@@ -481,7 +450,7 @@ describe('DiffProvider', () => {
   });
 
   // -----------------------------------------------------------------------
-  // file/edit with null params is ignored
+  // Edge cases
   // -----------------------------------------------------------------------
 
   describe('edge cases', () => {

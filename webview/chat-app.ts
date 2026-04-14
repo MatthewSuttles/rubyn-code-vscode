@@ -190,6 +190,28 @@ export class ChatApp extends LitElement {
     });
   }
 
+  /**
+   * Handle prompts triggered from outside the chat UI — command palette,
+   * keybindings, right-click menus. We want these to feel exactly like the
+   * user typed the prompt: render a user bubble, send with the webview's
+   * sessionId so it joins the active conversation.
+   */
+  private _onExternalPrompt(payload: {
+    text?: string;
+    context?: Record<string, unknown>;
+  }) {
+    if (!payload?.text) return;
+    this._addUserMessage(payload.text);
+    this.vscode.postMessage({
+      type: 'sendPrompt',
+      payload: {
+        text: payload.text,
+        sessionId: this.sessionId,
+        context: payload.context,
+      },
+    });
+  }
+
   private _onQuickAction(e: CustomEvent<{ prompt: string }>) {
     const text = e.detail.prompt;
     this._addUserMessage(text);
@@ -215,6 +237,17 @@ export class ChatApp extends LitElement {
   }
 
   private _onNewSession() {
+    // Tell the gem to drop the cached Agent::Conversation for the OLD
+    // sessionId before we generate a new one locally. Without this the
+    // gem would retain the old conversation in memory indefinitely.
+    const oldSessionId = this.sessionId;
+    if (oldSessionId) {
+      this.vscode.postMessage({
+        type: 'resetSession',
+        payload: { sessionId: oldSessionId },
+      });
+    }
+
     this.messages = [];
     this.sessionId = `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     this.totalCost = 0;
@@ -301,6 +334,18 @@ export class ChatApp extends LitElement {
   }
 
   private _onToolApproval(e: CustomEvent<{ requestId: string; approved: boolean }>) {
+    const { requestId, approved } = e.detail;
+
+    // Update the matching tool-use message so the approval state persists
+    // across re-renders. Without this, any subsequent state change (new
+    // stream chunk, tool/result arriving) would re-render the message and
+    // reset the chat-message's local @property back to 'pending'.
+    this.messages = this.messages.map((m) =>
+      m.requestId === requestId && m.messageType === 'tool-use'
+        ? { ...m, approvalState: approved ? 'approved' : 'denied' }
+        : m,
+    );
+
     this.vscode.postMessage({
       type: 'approveToolUse',
       payload: e.detail,
@@ -350,6 +395,10 @@ export class ChatApp extends LitElement {
 
       case 'webview/restored':
         // State already restored from getState().
+        break;
+
+      case 'external/sendPrompt':
+        this._onExternalPrompt(msg.payload);
         break;
     }
   };
