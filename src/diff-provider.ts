@@ -163,16 +163,20 @@ export class DiffProvider implements vscode.Disposable {
     this.disposables.push(
       vscode.workspace.registerTextDocumentContentProvider(PROPOSED_SCHEME, this.contentProvider),
       vscode.languages.registerCodeLensProvider({ scheme: PROPOSED_SCHEME }, this.lensProvider),
-      vscode.commands.registerCommand(ACCEPT_COMMAND, (editId: string) => {
-        this.log.appendLine(`[accept] command fired editId=${editId}`);
+      vscode.commands.registerCommand(ACCEPT_COMMAND, (arg?: string | vscode.Uri) => {
+        const editId = this.resolveEditId(arg);
+        this.log.appendLine(`[accept] command fired editId=${editId ?? '<none>'}`);
+        if (!editId) return;
         return this.acceptByEditId(editId).catch((err: unknown) => {
           const msg = err instanceof Error ? err.message : String(err);
           this.log.appendLine(`[accept] FAILED editId=${editId}: ${msg}`);
           void vscode.window.showErrorMessage(`Rubyn accept failed: ${msg}`);
         });
       }),
-      vscode.commands.registerCommand(REJECT_COMMAND, (editId: string) => {
-        this.log.appendLine(`[reject] command fired editId=${editId}`);
+      vscode.commands.registerCommand(REJECT_COMMAND, (arg?: string | vscode.Uri) => {
+        const editId = this.resolveEditId(arg);
+        this.log.appendLine(`[reject] command fired editId=${editId ?? '<none>'}`);
+        if (!editId) return;
         return this.rejectByEditId(editId).catch((err: unknown) => {
           const msg = err instanceof Error ? err.message : String(err);
           this.log.appendLine(`[reject] FAILED editId=${editId}: ${msg}`);
@@ -404,6 +408,38 @@ export class DiffProvider implements vscode.Disposable {
   // -----------------------------------------------------------------------
   // Command entry points (called by CodeLens clicks)
   // -----------------------------------------------------------------------
+
+  /**
+   * Resolve an editId from whatever the command handler got:
+   *   - a string editId (passed by our CodeLens)
+   *   - a proposed-scheme Uri (passed by the editor/title menu button)
+   *   - nothing (invoked from command palette or keybinding) — fall back
+   *     to the active editor's Uri if it's a proposed document.
+   */
+  private resolveEditId(arg?: string | vscode.Uri): string | null {
+    if (typeof arg === 'string') return arg;
+    if (arg && arg.scheme === PROPOSED_SCHEME) return extractEditId(arg);
+
+    const active = vscode.window.activeTextEditor?.document.uri;
+    if (active?.scheme === PROPOSED_SCHEME) return extractEditId(active);
+
+    // Also check tabGroups for a visible proposed doc — the title-menu
+    // button sometimes passes no arg if the diff tab wasn't active when
+    // it fired.
+    for (const group of vscode.window.tabGroups.all) {
+      for (const tab of group.tabs) {
+        const input = tab.input as
+          | { modified?: vscode.Uri; uri?: vscode.Uri }
+          | undefined;
+        const candidate = input?.modified ?? input?.uri;
+        if (candidate?.scheme === PROPOSED_SCHEME) {
+          const id = extractEditId(candidate);
+          if (id && this.pending.has(id)) return id;
+        }
+      }
+    }
+    return null;
+  }
 
   async acceptByEditId(editId: string): Promise<void> {
     const pending = this.pending.get(editId);
