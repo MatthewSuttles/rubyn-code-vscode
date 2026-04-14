@@ -257,112 +257,68 @@ export async function activate(
     }),
   );
 
+  // The three "smart command" shortcuts below all route through the chat
+  // webview rather than calling bridge.request directly. That way the
+  // prompt appears as a user bubble in the active chat AND uses the
+  // webview's sessionId, so the gem treats it as a follow-up turn on the
+  // current conversation — not a fresh session every click.
+  const runChatCommand = async (
+    commandName: string,
+    promptText: string,
+    failMessage: string,
+    requireSelection = true,
+  ): Promise<void> => {
+    if (!contextProvider) {
+      vscode.window.showErrorMessage('Rubyn Code is not running.');
+      return;
+    }
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || (requireSelection && editor.selection.isEmpty)) {
+      vscode.window.showWarningMessage(failMessage);
+      return;
+    }
+    try {
+      const { prompt, context: ctx } = await contextProvider.enrichPrompt(commandName, promptText);
+      await chatProvider.sendExternalPrompt(prompt, ctx as unknown as Record<string, unknown>);
+    } catch (err) {
+      vscode.window.showErrorMessage(
+        `${commandName} failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  };
+
   // rubyn-code.refactorSelection — refactor selected code.
   context.subscriptions.push(
-    vscode.commands.registerCommand(
-      'rubyn-code.refactorSelection',
-      async () => {
-        if (!bridge || !contextProvider) {
-          vscode.window.showErrorMessage('Rubyn Code is not running.');
-          return;
-        }
-
-        const editor = vscode.window.activeTextEditor;
-        if (!editor || editor.selection.isEmpty) {
-          vscode.window.showWarningMessage(
-            'Select some code first, then run Refactor Selection.',
-          );
-          return;
-        }
-
-        const { prompt, context: ctx } = await contextProvider.enrichPrompt(
-          'refactorSelection',
-          'Refactor this code. Improve readability, reduce duplication, and follow Ruby/Rails best practices.',
-        );
-
-        try {
-          await bridge.request('prompt', {
-            text: prompt,
-            context: ctx,
-            sessionId: generateSessionId(),
-          });
-        } catch (err) {
-          vscode.window.showErrorMessage(
-            `Refactor failed: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        }
-      },
+    vscode.commands.registerCommand('rubyn-code.refactorSelection', () =>
+      runChatCommand(
+        'refactorSelection',
+        'Refactor this code. Improve readability, reduce duplication, and follow Ruby/Rails best practices.',
+        'Select some code first, then run Refactor Selection.',
+      ),
     ),
   );
 
   // rubyn-code.generateSpecs — generate specs for the active file.
   context.subscriptions.push(
-    vscode.commands.registerCommand('rubyn-code.generateSpecs', async () => {
-      if (!bridge || !contextProvider) {
-        vscode.window.showErrorMessage('Rubyn Code is not running.');
-        return;
-      }
-
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) {
-        vscode.window.showWarningMessage(
-          'Open a file first, then run Generate Specs.',
-        );
-        return;
-      }
-
-      const { prompt, context: ctx } = await contextProvider.enrichPrompt(
+    vscode.commands.registerCommand('rubyn-code.generateSpecs', () =>
+      runChatCommand(
         'generateSpecs',
         'Write specs for this file. Provide thorough test coverage with edge cases.',
-      );
-
-      try {
-        await bridge.request('prompt', {
-          text: prompt,
-          context: ctx,
-          sessionId: generateSessionId(),
-        });
-      } catch (err) {
-        vscode.window.showErrorMessage(
-          `Generate specs failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-    }),
+        'Open a file first, then run Generate Specs.',
+        false,
+      ),
+    ),
   );
 
   // rubyn-code.explainCode — explain selected code.
   context.subscriptions.push(
-    vscode.commands.registerCommand('rubyn-code.explainCode', async () => {
-      if (!bridge || !contextProvider) {
-        vscode.window.showErrorMessage('Rubyn Code is not running.');
-        return;
-      }
-
-      const editor = vscode.window.activeTextEditor;
-      if (!editor || editor.selection.isEmpty) {
-        vscode.window.showWarningMessage(
-          'Select some code first, then run Explain Code.',
-        );
-        return;
-      }
-
-      const { prompt, context: ctx } = await contextProvider.enrichPrompt(
+    vscode.commands.registerCommand('rubyn-code.explainCode', () =>
+      runChatCommand(
         'explainCode',
         'Explain this code. Describe what it does, why, and any notable patterns or potential issues.',
-      );
-
-      try {
-        await bridge.request('prompt', {
-          text: prompt,
-          context: ctx,
-          sessionId: generateSessionId(),
-        });
-      } catch (err) {
-        vscode.window.showErrorMessage(
-          `Explain code failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-    }),
+        'Select some code first, then run Explain Code.',
+      ),
+    ),
   );
 
   // 7. Register status bar.

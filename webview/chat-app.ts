@@ -190,6 +190,28 @@ export class ChatApp extends LitElement {
     });
   }
 
+  /**
+   * Handle prompts triggered from outside the chat UI — command palette,
+   * keybindings, right-click menus. We want these to feel exactly like the
+   * user typed the prompt: render a user bubble, send with the webview's
+   * sessionId so it joins the active conversation.
+   */
+  private _onExternalPrompt(payload: {
+    text?: string;
+    context?: Record<string, unknown>;
+  }) {
+    if (!payload?.text) return;
+    this._addUserMessage(payload.text);
+    this.vscode.postMessage({
+      type: 'sendPrompt',
+      payload: {
+        text: payload.text,
+        sessionId: this.sessionId,
+        context: payload.context,
+      },
+    });
+  }
+
   private _onQuickAction(e: CustomEvent<{ prompt: string }>) {
     const text = e.detail.prompt;
     this._addUserMessage(text);
@@ -350,6 +372,10 @@ export class ChatApp extends LitElement {
 
       case 'webview/restored':
         // State already restored from getState().
+        break;
+
+      case 'external/sendPrompt':
+        this._onExternalPrompt(msg.payload);
         break;
     }
   };

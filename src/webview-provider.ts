@@ -20,7 +20,8 @@ interface WebviewToExtension {
  *
  * Only include methods the gem actually emits — forwarding a dead method
  * silently queues webview work for notifications that will never arrive.
- * Verify gem emitters in lib/rubyn_code/ide/**/*.rb before adding here.
+ * Verify gem emitters by grepping `@server.notify` under lib/rubyn_code/ide
+ * before adding here.
  */
 const FORWARDED_NOTIFICATIONS = [
   'stream/text',
@@ -111,6 +112,19 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     } else {
       this.pendingMessages.push(message);
     }
+  }
+
+  /**
+   * Dispatch a prompt through the chat from an external trigger (command
+   * palette, keybinding, etc). The webview handles the message exactly as
+   * if the user typed it — renders a user bubble, then sends `sendPrompt`
+   * with the webview's own sessionId so it joins the active chat rather
+   * than spawning a fresh session on the gem side.
+   */
+  async sendExternalPrompt(text: string, context: Record<string, unknown>): Promise<void> {
+    // Make sure the chat is visible so the user sees what's happening.
+    await vscode.commands.executeCommand('rubyn-code.chat.focus');
+    this.postMessage({ type: 'external/sendPrompt', payload: { text, context } });
   }
 
   // ---------------------------------------------------------------------------
