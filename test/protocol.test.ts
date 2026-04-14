@@ -42,6 +42,7 @@ const GEM_HANDLERS = new Set([
   'config/get',
   'config/set',
   'models/list',
+  'session/reset',
 ]);
 
 // ---------------------------------------------------------------------------
@@ -131,10 +132,31 @@ describe('protocol round-trip', () => {
         'config/get',
         'config/set',
         'models/list',
+        'session/reset',
       ];
       for (const method of extensionCalls) {
         expect(GEM_HANDLERS.has(method), `method "${method}" must be a gem handler`).toBe(true);
       }
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Session reset flow — "New Session" button → gem drops conversation
+  // -----------------------------------------------------------------------
+
+  describe('session reset flow', () => {
+    it('notifies the gem on session/reset when the user starts a new session', async () => {
+      // The webview posts {type: 'resetSession', payload: {sessionId}} which
+      // the extension host forwards as bridge.notify('session/reset', ...).
+      // We simulate the extension-host leg directly.
+      env.bridge.notify('session/reset', { sessionId: 'sess-old' });
+      await new Promise((r) => setTimeout(r, 10));
+
+      const sent = env.extMessages();
+      const msg = sent.find((m) => m.method === 'session/reset');
+      expect(msg, 'extension must send session/reset JSON-RPC').toBeDefined();
+      expect((msg!.params as any).sessionId).toBe('sess-old');
+      expect(msg!.id, 'session/reset is a notification, must have no id').toBeUndefined();
     });
   });
 

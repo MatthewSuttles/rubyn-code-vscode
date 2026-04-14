@@ -12,7 +12,7 @@ import { Bridge } from './bridge';
 
 /** Messages the webview can send to the extension host. */
 interface WebviewToExtension {
-  type: 'sendPrompt' | 'approveToolUse' | 'cancel' | 'changeModel' | 'slashCommand';
+  type: 'sendPrompt' | 'approveToolUse' | 'cancel' | 'changeModel' | 'slashCommand' | 'resetSession';
   payload?: Record<string, unknown>;
 }
 
@@ -152,6 +152,19 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
 
       case 'cancel': {
         this.bridge.notify('cancel', {});
+        break;
+      }
+
+      case 'resetSession': {
+        // User clicked "New Session" in the chat header. Tell the gem to
+        // drop its cached Agent::Conversation for this sessionId so the
+        // next prompt starts with empty message history — parity with the
+        // CLI REPL's `/new` command. The JSON-RPC method name must match
+        // handlers.rb's 'session/reset' registration.
+        const { sessionId } = (message.payload ?? {}) as Record<string, unknown>;
+        if (sessionId) {
+          this.bridge.notify('session/reset', { sessionId: sessionId as string });
+        }
         break;
       }
 

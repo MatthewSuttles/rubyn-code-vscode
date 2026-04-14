@@ -204,6 +204,17 @@ export class ChatApp extends LitElement {
   }
 
   private _onNewSession() {
+    // Tell the gem to drop the cached Agent::Conversation for the OLD
+    // sessionId before we generate a new one locally. Without this the
+    // gem would retain the old conversation in memory indefinitely.
+    const oldSessionId = this.sessionId;
+    if (oldSessionId) {
+      this.vscode.postMessage({
+        type: 'resetSession',
+        payload: { sessionId: oldSessionId },
+      });
+    }
+
     this.messages = [];
     this.sessionId = `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     this.totalCost = 0;
