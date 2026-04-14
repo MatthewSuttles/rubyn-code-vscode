@@ -16,14 +16,17 @@ interface WebviewToExtension {
   payload?: Record<string, unknown>;
 }
 
-/** Notification methods forwarded from bridge to webview. */
+/** Notification methods forwarded from bridge to webview.
+ *
+ * Only include methods the gem actually emits — forwarding a dead method
+ * silently queues webview work for notifications that will never arrive.
+ * Verify gem emitters in lib/rubyn_code/ide/**/*.rb before adding here.
+ */
 const FORWARDED_NOTIFICATIONS = [
   'stream/text',
-  'stream/codeBlock',
   'tool/use',
   'tool/result',
   'agent/status',
-  'session/cost',
 ] as const;
 
 export class ChatWebviewProvider implements vscode.WebviewViewProvider {
