@@ -451,10 +451,12 @@ export class DiffProvider implements vscode.Disposable {
     return lines.join('\n');
   }
 
-  /** Send the acceptEdit response back to the CLI process. */
+  /** Send the acceptEdit request back to the CLI process. */
   private sendAcceptEdit(editId: string, accepted: boolean): void {
     const params: AcceptEditParams = { editId, accepted };
-    this.bridge.notify('acceptEdit', params as unknown as Record<string, unknown>);
+    this.bridge.request('acceptEdit', params as unknown as Record<string, unknown>).catch((err: Error) => {
+      console.warn(`[DiffProvider] acceptEdit failed: ${err.message}`);
+    });
   }
 
   /** Remove a pending edit and clean up its virtual documents. */

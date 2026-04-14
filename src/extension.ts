@@ -10,6 +10,7 @@ import { createStatusBar, StatusBar } from './status-bar';
 import { createModelSelector } from './model-selector';
 import { ChatWebviewProvider } from './webview-provider';
 import { registerIdeRpcHandlers } from './ide-rpc-handler';
+import { DiffProvider } from './diff-provider';
 import { InitializeParams, InitializeResult, ConfigGetAllResult } from './types';
 
 // ---------------------------------------------------------------------------
@@ -142,6 +143,10 @@ export async function activate(
     ),
   );
   context.subscriptions.push(chatProvider);
+
+  // 5b2. Register the diff provider for file/edit and file/create notifications.
+  const diffProvider = new DiffProvider(bridge);
+  context.subscriptions.push(diffProvider);
 
   // 5c. Forward model/config changes to the webview dropdown.
   bridge.on('config/changed', (params: Record<string, unknown> | undefined) => {
