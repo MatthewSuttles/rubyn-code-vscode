@@ -4,6 +4,7 @@ node_modules/**
 src/**
 webview/**
 test/**
+protocol
 protocol/**
 .gitignore
 .eslintrc.json
