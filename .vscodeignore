@@ -4,10 +4,13 @@ node_modules/**
 src/**
 webview/**
 test/**
+protocol/**
 .gitignore
 .eslintrc.json
 tsconfig.json
+tsconfig.webview.json
 webpack.config.js
+vitest.config.ts
 **/*.map
 **/*.ts
 !dist/**
