@@ -160,6 +160,23 @@ export class DiffProvider implements vscode.Disposable {
 
   private async handleModify(edit: FileEditParams): Promise<void> {
     const originalUri = vscode.Uri.file(edit.path);
+
+    // If the file doesn't exist, fall through to handleCreate — the model
+    // may have sent type:'modify' for a file that should be created. Without
+    // this guard `vscode.diff` blows up with "file was not found".
+    try {
+      await vscode.workspace.fs.stat(originalUri);
+    } catch {
+      this.log.appendLine(`[modify] file not found, falling back to create: ${edit.path}`);
+      await this.handleCreate({
+        editId: edit.editId,
+        path: edit.path,
+        type: 'create',
+        content: edit.content ?? '',
+      });
+      return;
+    }
+
     const proposedUri = vscode.Uri.parse(
       `${PROPOSED_SCHEME}://rubyn/proposed-${this.seq++}/${encodeURIComponent(
         edit.path,

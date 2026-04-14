@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 
-export type AgentStatus = 'idle' | 'thinking' | 'streaming' | 'done';
+export type AgentStatus = 'idle' | 'thinking' | 'streaming' | 'done' | 'cancelled' | 'error';
 
 export interface ModelOption {
   provider: string;
@@ -126,7 +126,11 @@ export class StatusHeader extends LitElement {
         ? 'Ready'
         : this.status === 'thinking'
           ? 'Thinking...'
-          : 'Streaming...';
+          : this.status === 'cancelled'
+            ? 'Cancelled'
+            : this.status === 'error'
+              ? 'Error'
+              : 'Streaming...';
 
     const costStr = this.totalCost > 0
       ? `$${this.totalCost.toFixed(4)}`
