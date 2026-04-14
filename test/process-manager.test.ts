@@ -59,7 +59,7 @@ describe('ProcessManager', () => {
 
     __setConfig('rubyn-code', {
       executablePath: 'rubyn-code',
-      yoloMode: false,
+      permissionMode: 'default',
     });
 
     (vscode.workspace as any).workspaceFolders = [
@@ -99,14 +99,14 @@ describe('ProcessManager', () => {
       expect(child).toBe(mockSpawnResult);
     });
 
-    it('includes --yolo flag when yoloMode is enabled', () => {
-      __setConfig('rubyn-code', { yoloMode: true, executablePath: 'rubyn-code' });
+    it('includes --permission-mode flag when permissionMode is set', () => {
+      __setConfig('rubyn-code', { permissionMode: 'bypass', executablePath: 'rubyn-code' });
 
       pm.spawn();
 
       expect(cpSpawn).toHaveBeenCalledWith(
         'rubyn-code',
-        expect.arrayContaining(['--yolo']),
+        expect.arrayContaining(['--permission-mode', 'bypass']),
         expect.any(Object),
       );
     });
@@ -114,7 +114,7 @@ describe('ProcessManager', () => {
     it('uses custom executable path from settings', () => {
       __setConfig('rubyn-code', {
         executablePath: '/usr/local/bin/my-rubyn',
-        yoloMode: false,
+        permissionMode: 'default',
       });
 
       pm.spawn();

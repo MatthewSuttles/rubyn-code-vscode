@@ -30,9 +30,12 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'rubyn-code.chat';
 
   private view?: vscode.WebviewView;
+  private _visible = true;
   private readonly extensionUri: vscode.Uri;
   private readonly bridge: Bridge;
   private readonly disposables: vscode.Disposable[] = [];
+  private readonly _onDidChangeVisibility = new vscode.EventEmitter<boolean>();
+  public readonly onDidChangeVisibility = this._onDidChangeVisibility.event;
 
   /** Messages queued before the webview is resolved. Replayed on resolve. */
   private pendingMessages: Record<string, unknown>[] = [];
@@ -89,8 +92,10 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     // Cleanup on dispose.
     webviewView.onDidDispose(() => this.onDispose(), undefined, this.disposables);
 
-    // Re-post current state when the webview becomes visible again.
+    // Track visibility and re-post current state when the webview becomes visible again.
     webviewView.onDidChangeVisibility(() => {
+      this._visible = webviewView.visible;
+      this._onDidChangeVisibility.fire(this._visible);
       if (webviewView.visible) {
         this.postMessage({ type: 'webview/restored' });
       }
@@ -108,6 +113,11 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     } else {
       this.pendingMessages.push(message);
     }
+  }
+
+  /** Whether the webview panel is currently visible. */
+  get visible(): boolean {
+    return this._visible;
   }
 
   // ---------------------------------------------------------------------------
@@ -141,7 +151,11 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       }
 
       case 'cancel': {
-        this.bridge.notify('cancel', {});
+        // Forward the sessionId so the gem's CancelHandler can find the
+        // right agent thread in PromptHandler#@sessions. Without it the
+        // handler returns "Missing sessionId" and the notify is dropped.
+        const { sessionId } = (message.payload ?? {}) as Record<string, unknown>;
+        this.bridge.notify('cancel', { sessionId: sessionId as string });
         break;
       }
 
@@ -284,6 +298,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
 
   private onDispose(): void {
     this.unregisterBridgeForwarding();
+    this._onDidChangeVisibility.dispose();
     for (const d of this.disposables) {
       d.dispose();
     }

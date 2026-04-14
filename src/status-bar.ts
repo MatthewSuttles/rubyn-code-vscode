@@ -21,6 +21,8 @@ export class StatusBar implements vscode.Disposable {
   private toolCalls = 0;
   private tokensUsed = 0;
   private cost = 0;
+  private _permissionPending = false;
+  private _completedHidden = false;
 
   /** Latest session-level cost snapshot (if received). */
   private sessionCost: SessionCostParams | undefined;
@@ -70,6 +72,18 @@ export class StatusBar implements vscode.Disposable {
     this.renderDisconnected();
   }
 
+  /** Show or hide the blue permission-pending badge. */
+  setPermissionPending(pending: boolean): void {
+    this._permissionPending = pending;
+    this.render();
+  }
+
+  /** Show or hide the orange completed-while-hidden badge. */
+  setCompletedHidden(hidden: boolean): void {
+    this._completedHidden = hidden;
+    this.render();
+  }
+
   // -----------------------------------------------------------------------
   // Rendering
   // -----------------------------------------------------------------------
@@ -77,9 +91,13 @@ export class StatusBar implements vscode.Disposable {
   private render(): void {
     this.item.text = this.buildText();
     this.item.tooltip = this.buildTooltip();
-    this.item.backgroundColor = this.agentState === 'idle'
-      ? undefined
-      : undefined; // reserved for future error highlighting
+    if (this._permissionPending) {
+      this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+    } else if (this._completedHidden) {
+      this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+    } else {
+      this.item.backgroundColor = undefined;
+    }
   }
 
   private renderDisconnected(): void {
@@ -88,21 +106,29 @@ export class StatusBar implements vscode.Disposable {
   }
 
   private buildText(): string {
+    // Badge indicator: blue dot for pending permission, orange dot for completed-while-hidden.
+    let badge = '';
+    if (this._permissionPending) {
+      badge = '$(circle-filled) ';
+    } else if (this._completedHidden) {
+      badge = '$(circle-filled) ';
+    }
+
     switch (this.agentState) {
       case 'idle':
-        return '$(ruby) Rubyn';
+        return `${badge}$(ruby) Rubyn`;
       case 'thinking':
-        return '$(loading~spin) Rubyn \u00b7 thinking\u2026';
+        return `${badge}$(loading~spin) Rubyn \u00b7 thinking\u2026`;
       case 'tool_use':
-        return `$(tools) Rubyn \u00b7 ${this.detail ?? 'tool'}`;
+        return `${badge}$(tools) Rubyn \u00b7 ${this.detail ?? 'tool'}`;
       case 'streaming':
-        return '$(edit) Rubyn \u00b7 writing\u2026';
+        return `${badge}$(edit) Rubyn \u00b7 writing\u2026`;
       case 'reviewing':
-        return '$(eye) Rubyn \u00b7 reviewing\u2026';
+        return `${badge}$(eye) Rubyn \u00b7 reviewing\u2026`;
       case 'learning':
-        return '$(book) Rubyn \u00b7 learning\u2026';
+        return `${badge}$(book) Rubyn \u00b7 learning\u2026`;
       default:
-        return '$(ruby) Rubyn';
+        return `${badge}$(ruby) Rubyn`;
     }
   }
 
@@ -111,6 +137,12 @@ export class StatusBar implements vscode.Disposable {
     md.isTrusted = true;
 
     md.appendMarkdown('### Rubyn Code\n\n');
+
+    if (this._permissionPending) {
+      md.appendMarkdown('$(circle-filled) **Waiting for approval**\n\n');
+    } else if (this._completedHidden) {
+      md.appendMarkdown('$(circle-filled) **Task completed**\n\n');
+    }
 
     // Session cost
     const totalCost = this.sessionCost?.totalCost ?? this.cost;
@@ -173,7 +205,7 @@ function formatNumber(n: number): string {
  * Create a {@link StatusBar}, wire it to the bridge's notification events,
  * and return it as a disposable.
  */
-export function createStatusBar(bridge: Bridge): vscode.Disposable {
+export function createStatusBar(bridge: Bridge): StatusBar & vscode.Disposable {
   const statusBar = new StatusBar();
 
   const onAgentStatus = (params: Record<string, unknown> | undefined) => {
@@ -196,13 +228,14 @@ export function createStatusBar(bridge: Bridge): vscode.Disposable {
   bridge.on('session/cost', onSessionCost);
   bridge.on('close', onClose);
 
-  // Return a composite disposable that tears down everything.
-  return {
-    dispose() {
-      bridge.off('agent/status', onAgentStatus);
-      bridge.off('session/cost', onSessionCost);
-      bridge.off('close', onClose as any);
-      statusBar.dispose();
-    },
+  // Override dispose to also clean up bridge listeners.
+  const originalDispose = statusBar.dispose.bind(statusBar);
+  statusBar.dispose = () => {
+    bridge.off('agent/status', onAgentStatus);
+    bridge.off('session/cost', onSessionCost);
+    bridge.off('close', onClose as any);
+    originalDispose();
   };
+
+  return statusBar;
 }

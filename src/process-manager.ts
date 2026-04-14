@@ -45,12 +45,12 @@ export class ProcessManager implements vscode.Disposable {
 
     const config = vscode.workspace.getConfiguration('rubyn-code');
     const executablePath = config.get<string>('executablePath', 'rubyn-code');
-    const yoloMode = config.get<boolean>('yoloMode', false);
+    const permissionMode = config.get<string>('permissionMode', 'default');
 
     const args = ['--ide'];
 
-    if (yoloMode) {
-      args.push('--yolo');
+    if (permissionMode && permissionMode !== 'default') {
+      args.push('--permission-mode', permissionMode);
     }
 
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
