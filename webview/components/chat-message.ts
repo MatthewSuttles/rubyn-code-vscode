@@ -242,17 +242,17 @@ export class ChatMessage extends LitElement {
     }
 
     .message.tool-use {
-      background: color-mix(in srgb, var(--vscode-editorInfo-foreground, #3794ff) 8%, transparent);
-      border: 1px solid color-mix(in srgb, var(--vscode-editorInfo-foreground, #3794ff) 25%, transparent);
-      border-radius: 8px;
-      padding: 8px 12px;
+      background: color-mix(in srgb, var(--vscode-editorInfo-foreground, #3794ff) 6%, transparent);
+      border-left: 2px solid color-mix(in srgb, var(--vscode-editorInfo-foreground, #3794ff) 40%, transparent);
+      border-radius: 2px;
+      padding: 4px 10px;
       font-size: 12px;
     }
 
     .message.tool-result {
-      background: color-mix(in srgb, var(--vscode-editor-foreground) 5%, transparent);
-      border-radius: 8px;
-      padding: 6px 12px;
+      background: transparent;
+      border-radius: 2px;
+      padding: 2px 10px 2px 14px;
       font-size: 12px;
     }
 
@@ -375,32 +375,44 @@ export class ChatMessage extends LitElement {
     .content .hl-num { color: var(--vscode-symbolIcon-numberForeground, #b5cea8); }
     .content .hl-cmt { color: var(--vscode-symbolIcon-commentForeground, #6a9955); font-style: italic; }
 
-    /* Tool use card */
+    /* Tool use card — compact inline style */
     .tool-header {
       display: flex;
       align-items: center;
       gap: 6px;
-      font-weight: 600;
-    }
-
-    .tool-icon {
-      font-size: 13px;
     }
 
     .tool-name {
       font-family: var(--vscode-editor-font-family, monospace);
+      font-size: 11px;
+      font-weight: 600;
+      opacity: 0.7;
+    }
+
+    .tool-preview {
+      margin-top: 2px;
+      font-family: var(--vscode-editor-font-family, monospace);
       font-size: 12px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: var(--vscode-editor-foreground);
     }
 
     .tool-args {
-      margin-top: 6px;
+      margin-top: 4px;
     }
 
     .tool-args summary {
-      font-size: 11px;
+      font-size: 10px;
       color: var(--vscode-descriptionForeground);
       cursor: pointer;
       user-select: none;
+      opacity: 0.6;
+    }
+
+    .tool-args summary:hover {
+      opacity: 1;
     }
 
     .tool-args pre {
@@ -415,13 +427,14 @@ export class ChatMessage extends LitElement {
       word-break: break-all;
     }
 
-    /* Tool result */
+    /* Tool result — single line */
     .result-icon {
       margin-right: 4px;
     }
 
     .result-summary {
       color: var(--vscode-descriptionForeground);
+      font-size: 12px;
     }
 
     /* Streaming cursor */
@@ -562,20 +575,70 @@ export class ChatMessage extends LitElement {
   }
 
   private _renderToolUse() {
+    const preview = this._toolPreview();
     const argsStr = JSON.stringify(this.toolArgs, null, 2);
+    const hasExtraArgs = argsStr !== '{}' && argsStr !== JSON.stringify(preview ? undefined : this.toolArgs);
+
     return html`
       <div class="message tool-use">
         <div class="tool-header">
-          <span class="tool-icon">\u{1F527}</span>
           <span class="tool-name">${this.toolName}</span>
         </div>
-        <details class="tool-args">
-          <summary>Arguments</summary>
-          <pre>${argsStr}</pre>
-        </details>
+        ${preview ? html`<div class="tool-preview">${preview}</div>` : nothing}
+        ${hasExtraArgs ? html`
+          <details class="tool-args">
+            <summary>details</summary>
+            <pre>${argsStr}</pre>
+          </details>
+        ` : nothing}
         ${this._renderApprovalUI()}
       </div>
     `;
+  }
+
+  /** Extract the most useful one-liner from tool args based on tool type. */
+  private _toolPreview(): string {
+    const a = this.toolArgs;
+    switch (this.toolName) {
+      case 'bash':
+        return (a.command as string) ?? '';
+      case 'read_file':
+        return (a.path as string) ?? '';
+      case 'write_file':
+        return (a.path as string) ?? '';
+      case 'edit_file':
+        return (a.path as string) ?? '';
+      case 'glob':
+        return (a.pattern as string) ?? '';
+      case 'grep': {
+        const pattern = (a.pattern as string) ?? '';
+        const path = (a.path as string) ?? '';
+        return path ? `${pattern} in ${path}` : pattern;
+      }
+      case 'git_diff':
+      case 'git_status':
+      case 'git_log':
+      case 'git_commit':
+        return (a.args as string) ?? '';
+      case 'run_specs':
+        return (a.path as string) ?? (a.args as string) ?? '';
+      case 'web_search':
+        return (a.query as string) ?? '';
+      case 'web_fetch':
+        return (a.url as string) ?? '';
+      case 'spawn_agent':
+        return (a.prompt as string)?.slice(0, 120) ?? '';
+      case 'ide_diagnostics':
+        return (a.file as string) ?? 'workspace';
+      case 'ide_symbols':
+        return (a.query as string) ?? '';
+      default:
+        // For unknown tools, show the first string value if there's only one
+        {
+          const vals = Object.values(a).filter((v) => typeof v === 'string') as string[];
+          return vals.length === 1 ? vals[0].slice(0, 200) : '';
+        }
+    }
   }
 
   private _renderApprovalUI() {
