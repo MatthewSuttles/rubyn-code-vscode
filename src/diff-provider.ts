@@ -167,7 +167,7 @@ export class DiffProvider implements vscode.Disposable {
     try {
       await vscode.workspace.fs.stat(originalUri);
     } catch {
-      this.log.appendLine(`[modify] file not found, falling back to create: ${edit.path}`);
+      console.warn(`[DiffProvider] file not found, falling back to create: ${edit.path}`);
       await this.handleCreate({
         editId: edit.editId,
         path: edit.path,
