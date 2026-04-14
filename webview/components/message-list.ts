@@ -12,6 +12,10 @@ export interface ChatMessageData {
   toolArgs?: Record<string, unknown>;
   requestId?: string;
   requiresApproval?: boolean;
+  /** Once the user clicks Allow/Deny on a tool-use card, we optimistically
+   * flip this so the buttons disappear and the card shows the decision.
+   * 'pending' (default when requiresApproval is true) → 'approved' | 'denied'. */
+  approvalState?: 'pending' | 'approved' | 'denied';
   toolSuccess?: boolean;
   toolSummary?: string;
 }
@@ -109,6 +113,7 @@ export class MessageList extends LitElement {
               .toolArgs=${msg.toolArgs ?? {}}
               .requestId=${msg.requestId ?? ''}
               .requiresApproval=${msg.requiresApproval ?? false}
+              .approvalState=${msg.approvalState ?? 'pending'}
               .toolSuccess=${msg.toolSuccess ?? false}
               .toolSummary=${msg.toolSummary ?? ''}
               @tool-approval=${(e: CustomEvent) => this._forwardApproval(e)}

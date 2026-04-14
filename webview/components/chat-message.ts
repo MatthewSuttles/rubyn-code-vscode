@@ -471,6 +471,21 @@ export class ChatMessage extends LitElement {
     .approval-actions button:hover {
       opacity: 0.85;
     }
+
+    .approval-status {
+      margin-top: 8px;
+      font-size: 12px;
+      font-style: italic;
+      opacity: 0.8;
+    }
+
+    .approval-status.approved {
+      color: var(--vscode-testing-iconPassed, #73c991);
+    }
+
+    .approval-status.denied {
+      color: var(--vscode-errorForeground, #f85149);
+    }
   `;
 
   @property({ type: String }) role: MessageRole = 'assistant';
@@ -482,6 +497,7 @@ export class ChatMessage extends LitElement {
   @property({ type: Object }) toolArgs: Record<string, unknown> = {};
   @property({ type: String }) requestId = '';
   @property({ type: Boolean }) requiresApproval = false;
+  @property({ type: String }) approvalState: 'pending' | 'approved' | 'denied' = 'pending';
 
   /* Tool result properties */
   @property({ type: Boolean }) toolSuccess = false;
@@ -514,7 +530,12 @@ export class ChatMessage extends LitElement {
         });
       }
       if (target.classList.contains('btn-approve') || target.classList.contains('btn-deny')) {
+        // Ignore double-clicks once a decision has already been made.
+        if (this.approvalState !== 'pending') return;
         const approved = target.classList.contains('btn-approve');
+        // Optimistic UI: flip state immediately so the buttons disappear and
+        // the card shows "Approved / running…" or "Denied" right away.
+        this.approvalState = approved ? 'approved' : 'denied';
         this.dispatchEvent(
           new CustomEvent('tool-approval', {
             detail: { requestId: this.requestId, approved },
@@ -552,14 +573,28 @@ export class ChatMessage extends LitElement {
           <summary>Arguments</summary>
           <pre>${argsStr}</pre>
         </details>
-        ${this.requiresApproval
-          ? html`
-              <div class="approval-actions">
-                <button class="btn-approve">Allow</button>
-                <button class="btn-deny">Deny</button>
-              </div>
-            `
-          : nothing}
+        ${this._renderApprovalUI()}
+      </div>
+    `;
+  }
+
+  private _renderApprovalUI() {
+    if (!this.requiresApproval) return nothing;
+
+    // Once the user has clicked, hide the buttons and show a status line.
+    // A tool/result card will arrive next to show the actual outcome;
+    // this just confirms the click landed and the request is in flight.
+    if (this.approvalState === 'approved') {
+      return html`<div class="approval-status approved">\u2705 Approved — running…</div>`;
+    }
+    if (this.approvalState === 'denied') {
+      return html`<div class="approval-status denied">\u274C Denied</div>`;
+    }
+
+    return html`
+      <div class="approval-actions">
+        <button class="btn-approve">Allow</button>
+        <button class="btn-deny">Deny</button>
       </div>
     `;
   }

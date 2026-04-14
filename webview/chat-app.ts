@@ -323,6 +323,18 @@ export class ChatApp extends LitElement {
   }
 
   private _onToolApproval(e: CustomEvent<{ requestId: string; approved: boolean }>) {
+    const { requestId, approved } = e.detail;
+
+    // Update the matching tool-use message so the approval state persists
+    // across re-renders. Without this, any subsequent state change (new
+    // stream chunk, tool/result arriving) would re-render the message and
+    // reset the chat-message's local @property back to 'pending'.
+    this.messages = this.messages.map((m) =>
+      m.requestId === requestId && m.messageType === 'tool-use'
+        ? { ...m, approvalState: approved ? 'approved' : 'denied' }
+        : m,
+    );
+
     this.vscode.postMessage({
       type: 'approveToolUse',
       payload: e.detail,
