@@ -148,7 +148,7 @@ describe('Extension integration tests', () => {
 
     __setConfig('rubyn-code', {
       executablePath: 'rubyn-code',
-      yoloMode: false,
+      permissionMode: 'default',
     });
 
     (vscode.workspace as any).workspaceFolders = [

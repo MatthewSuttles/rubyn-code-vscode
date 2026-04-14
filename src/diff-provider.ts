@@ -4,7 +4,7 @@
  * Intercepts `file/edit` and `file/create` notifications from the Bridge,
  * shows VS Code's native diff editor for modifications, preview tabs for
  * new files, and confirmation dialogs for deletions.  The user can accept
- * or reject each proposed change; in yolo mode every edit is auto-accepted.
+ * or reject each proposed change; in bypass/auto/accept_edits modes edits are auto-accepted.
  */
 
 import * as vscode from 'vscode';
@@ -187,7 +187,7 @@ export class DiffProvider implements vscode.Disposable {
     this.pending.set(edit.editId, pending);
 
     // Yolo mode: auto-accept immediately with a brief notification.
-    if (this.isYoloMode()) {
+    if (this.isAutoApproveEdits()) {
       this.flashNotification(`Rubyn auto-applied changes to ${this.basename(edit.path)}`);
       await this.acceptModify(pending);
       return;
@@ -249,7 +249,7 @@ export class DiffProvider implements vscode.Disposable {
     this.pending.set(edit.editId, pending);
 
     // Yolo mode: auto-accept.
-    if (this.isYoloMode()) {
+    if (this.isAutoApproveEdits()) {
       this.flashNotification(`Rubyn auto-created ${this.basename(filePath)}`);
       await this.acceptCreate(pending);
       return;
@@ -304,7 +304,7 @@ export class DiffProvider implements vscode.Disposable {
     this.pending.set(edit.editId, pending);
 
     // Yolo mode: auto-accept.
-    if (this.isYoloMode()) {
+    if (this.isAutoApproveEdits()) {
       this.flashNotification(`Rubyn auto-deleted ${this.basename(edit.path)}`);
       await this.acceptDelete(pending);
       return;
@@ -482,13 +482,12 @@ export class DiffProvider implements vscode.Disposable {
     }
   }
 
-  /** Check the user's yolo-mode setting. */
-  private isYoloMode(): boolean {
-    return (
-      vscode.workspace
-        .getConfiguration('rubyn-code')
-        .get<boolean>('yoloMode', false)
-    );
+  /** Check if the current permission mode auto-approves edits. */
+  private isAutoApproveEdits(): boolean {
+    const mode = vscode.workspace
+      .getConfiguration('rubyn-code')
+      .get<string>('permissionMode', 'default');
+    return mode === 'bypass' || mode === 'auto' || mode === 'accept_edits';
   }
 
   /** Show a brief auto-dismiss notification (for yolo mode). */
