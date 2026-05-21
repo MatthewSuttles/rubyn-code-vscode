@@ -9,6 +9,7 @@
 import * as vscode from 'vscode';
 import { SchemaIndex } from './SchemaIndex';
 import { ModelTableResolver } from './ModelTableResolver';
+import { RoutesIndex } from './RoutesIndex';
 
 const GEMFILE_RAILS_LINE = /^\s*gem\s+['"]rails['"]/m;
 const SCHEMA_RELOAD_DEBOUNCE_MS = 200;
@@ -16,18 +17,23 @@ const SCHEMA_RELOAD_DEBOUNCE_MS = 200;
 export class RailsProject {
   readonly root: vscode.Uri;
   readonly schemaPath: vscode.Uri | null;
+  readonly routesPath: vscode.Uri;
+  private readonly folder: vscode.WorkspaceFolder;
   private _schema: SchemaIndex;
   private _resolver: ModelTableResolver | null = null;
+  private _routes: RoutesIndex | null = null;
   private watcher: vscode.FileSystemWatcher | null = null;
   private reloadTimer: NodeJS.Timeout | null = null;
 
   private constructor(
-    root: vscode.Uri,
+    folder: vscode.WorkspaceFolder,
     schemaPath: vscode.Uri | null,
     schema: SchemaIndex,
   ) {
-    this.root = root;
+    this.folder = folder;
+    this.root = folder.uri;
     this.schemaPath = schemaPath;
+    this.routesPath = vscode.Uri.joinPath(folder.uri, 'config', 'routes.rb');
     this._schema = schema;
   }
 
@@ -40,6 +46,20 @@ export class RailsProject {
       this._resolver = new ModelTableResolver(this);
     }
     return this._resolver;
+  }
+
+  /**
+   * Lazily constructs (and on first access begins watching) the routes index.
+   * Returns the index without awaiting the initial parse — callers must call
+   * `await index.ensureLoaded()` before reading. Splitting construction from
+   * load means activation never blocks on a routes parse.
+   */
+  get routes(): RoutesIndex {
+    if (!this._routes) {
+      this._routes = RoutesIndex.create(this.root, this.routesPath);
+      this._routes.startWatching(this.folder);
+    }
+    return this._routes;
   }
 
   /**
@@ -77,7 +97,7 @@ export class RailsProject {
     const schemaPath = schemaExists ? schemaUri : null;
     const schema = schemaExists ? await loadSchema(schemaUri) : SchemaIndex.empty();
 
-    const project = new RailsProject(root, schemaPath, schema);
+    const project = new RailsProject(folder, schemaPath, schema);
     if (schemaPath) project.startWatching(folder);
     return project;
   }
@@ -115,6 +135,8 @@ export class RailsProject {
     this.watcher = null;
     this._resolver?.dispose();
     this._resolver = null;
+    this._routes?.dispose();
+    this._routes = null;
   }
 }
 
