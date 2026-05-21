@@ -268,6 +268,36 @@ export class TabInputTextDiff {
 }
 
 // ---------------------------------------------------------------------------
+// TreeView primitives
+// ---------------------------------------------------------------------------
+
+export enum TreeItemCollapsibleState {
+  None = 0,
+  Collapsed = 1,
+  Expanded = 2,
+}
+
+export class ThemeIcon {
+  static readonly File = new ThemeIcon('file');
+  static readonly Folder = new ThemeIcon('folder');
+  constructor(public readonly id: string, public readonly color?: unknown) {}
+}
+
+export class TreeItem {
+  id?: string;
+  description?: string | boolean;
+  iconPath?: ThemeIcon | Uri | string;
+  contextValue?: string;
+  command?: { title: string; command: string; arguments?: unknown[] };
+  tooltip?: string | MarkdownString;
+
+  constructor(
+    public label: string | { label: string; highlights?: ReadonlyArray<[number, number]> },
+    public collapsibleState: TreeItemCollapsibleState = TreeItemCollapsibleState.None,
+  ) {}
+}
+
+// ---------------------------------------------------------------------------
 // Completion
 // ---------------------------------------------------------------------------
 
@@ -562,6 +592,18 @@ export const window = {
     close: vi.fn(async () => true),
   },
   setStatusBarMessage: vi.fn((_text: string, _hideAfter?: number) => new Disposable(() => {})),
+  registerTreeDataProvider: vi.fn(
+    (_viewId: string, _provider: unknown) => new Disposable(() => {}),
+  ),
+  createTreeView: vi.fn((_viewId: string, _options: unknown) => ({
+    reveal: vi.fn(async () => undefined),
+    onDidChangeVisibility: new EventEmitter<{ visible: boolean }>().event,
+    onDidCollapseElement: new EventEmitter<unknown>().event,
+    onDidExpandElement: new EventEmitter<unknown>().event,
+    visible: false,
+    selection: [] as unknown[],
+    dispose: vi.fn(),
+  })),
 };
 
 // ---------------------------------------------------------------------------
