@@ -68,6 +68,32 @@
       {
         "command": "rubyn-code.refactorFromDiagnostic",
         "title": "Rubyn Code: Refactor from Diagnostic"
+      },
+      {
+        "command": "rubyn-code.refactorSelection.background",
+        "title": "Rubyn Code: Refactor Selection (Background)"
+      },
+      {
+        "command": "rubyn-code.generateSpecs.background",
+        "title": "Rubyn Code: Generate Specs (Background)"
+      },
+      {
+        "command": "rubyn-code.explainCode.background",
+        "title": "Rubyn Code: Explain Code (Background)"
+      },
+      {
+        "command": "rubyn-code.viewTaskResult",
+        "title": "Rubyn Code: View Task Result"
+      },
+      {
+        "command": "rubyn-code.cancelTask",
+        "title": "Cancel",
+        "icon": "$(stop-circle)"
+      },
+      {
+        "command": "rubyn-code.dismissTask",
+        "title": "Dismiss",
+        "icon": "$(close)"
       }
     ],
     "menus": {
@@ -95,6 +121,30 @@
         {
           "command": "rubyn-code.refactorFromDiagnostic",
           "when": "false"
+        },
+        {
+          "command": "rubyn-code.viewTaskResult",
+          "when": "false"
+        },
+        {
+          "command": "rubyn-code.cancelTask",
+          "when": "false"
+        },
+        {
+          "command": "rubyn-code.dismissTask",
+          "when": "false"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "rubyn-code.cancelTask",
+          "when": "view == rubyn-code.sessions && viewItem == task.running",
+          "group": "inline@1"
+        },
+        {
+          "command": "rubyn-code.dismissTask",
+          "when": "view == rubyn-code.sessions && viewItem == task.terminal",
+          "group": "inline@1"
         }
       ]
     },
@@ -264,6 +314,12 @@
           "minimum": 0,
           "description": "Warn when a single method's cyclomatic complexity exceeds this. Set to 0 to disable.",
           "order": 16
+        },
+        "rubyn-code.tasks.notifications": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a VS Code notification when a background task completes or fails.",
+          "order": 17
         }
       }
     },
@@ -277,6 +333,12 @@
         "command": "rubyn-code.refactorSelection",
         "key": "ctrl+shift+e",
         "mac": "cmd+shift+e",
+        "when": "editorHasSelection"
+      },
+      {
+        "command": "rubyn-code.refactorSelection.background",
+        "key": "ctrl+alt+shift+e",
+        "mac": "cmd+alt+shift+e",
         "when": "editorHasSelection"
       }
     ]

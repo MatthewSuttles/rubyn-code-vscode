@@ -18,6 +18,10 @@ import { AssociationCompletionProvider } from './completion/AssociationCompletio
 import { RubyClassDiagnosticProvider } from './diagnostics/RubyClassDiagnosticProvider';
 import { RefactorCodeActionProvider } from './diagnostics/RefactorCodeActionProvider';
 import { loadThresholds, ThresholdConfig } from './diagnostics/ThresholdConfig';
+import { TaskRegistry } from './tasks/TaskRegistry';
+import { SessionsTreeProvider } from './tasks/SessionsTreeProvider';
+import { TaskStatusBar } from './tasks/TaskStatusBar';
+import { Notifier } from './tasks/Notifier';
 import { InitializeParams, InitializeResult, ConfigGetAllResult } from './types';
 
 // ---------------------------------------------------------------------------
@@ -27,6 +31,7 @@ import { InitializeParams, InitializeResult, ConfigGetAllResult } from './types'
 let bridge: Bridge | undefined;
 let processManager: ProcessManager | undefined;
 let contextProvider: ContextProvider | undefined;
+let taskRegistry: TaskRegistry | undefined;
 const railsProjects = new Map<vscode.WorkspaceFolder, RailsProject>();
 
 // ---------------------------------------------------------------------------
@@ -43,6 +48,19 @@ export async function activate(
   console.log('[Rubyn Code] Extension activate() called');
   vscode.window.showInformationMessage('Rubyn Code is starting...');
   context.subscriptions.push(outputChannel);
+
+  // 1a-tasks. Boot the task registry early so other subsystems can hand work
+  // to it. Sessions tree, status bar, and notifier subscribe to its
+  // onDidChange and refresh as transitions land.
+  taskRegistry = new TaskRegistry();
+  context.subscriptions.push(taskRegistry);
+  const sessionsTree = new SessionsTreeProvider(taskRegistry);
+  context.subscriptions.push(sessionsTree);
+  context.subscriptions.push(
+    vscode.window.registerTreeDataProvider('rubyn-code.sessions', sessionsTree),
+  );
+  context.subscriptions.push(new TaskStatusBar(taskRegistry));
+  context.subscriptions.push(new Notifier(taskRegistry));
 
   // 1b. Detect Rails projects across workspace folders. Runs before the CLI
   // bridge so Rails-aware features stay available even if the gem isn't
@@ -442,6 +460,135 @@ export async function activate(
         'Explain this code. Describe what it does, why, and any notable patterns or potential issues.',
         'Select some code first, then run Explain Code.',
       ),
+    ),
+  );
+
+  // Background command variants. Each starts a Task in the registry whose
+  // body submits the prompt and resolves when the agent reports `done` for
+  // this submission (best-effort — if the agent never reports back, the
+  // user can cancel via the sessions view to force terminal state).
+  const backgroundVariants: Array<{
+    command: string;
+    label: string;
+    prompt: string;
+    failMessage: string;
+    requireSelection: boolean;
+  }> = [
+    {
+      command: 'rubyn-code.refactorSelection',
+      label: 'Refactor selection',
+      prompt:
+        'Refactor this code. Improve readability, reduce duplication, and follow Ruby/Rails best practices.',
+      failMessage: 'Select some code first, then run Refactor Selection (background).',
+      requireSelection: true,
+    },
+    {
+      command: 'rubyn-code.generateSpecs',
+      label: 'Generate specs',
+      prompt:
+        'Write specs for this file. Provide thorough test coverage with edge cases.',
+      failMessage: 'Open a file first, then run Generate Specs (background).',
+      requireSelection: false,
+    },
+    {
+      command: 'rubyn-code.explainCode',
+      label: 'Explain code',
+      prompt:
+        'Explain this code. Describe what it does, why, and any notable patterns or potential issues.',
+      failMessage: 'Select some code first, then run Explain Code (background).',
+      requireSelection: true,
+    },
+  ];
+
+  for (const variant of backgroundVariants) {
+    context.subscriptions.push(
+      vscode.commands.registerCommand(`${variant.command}.background`, async () => {
+        if (!contextProvider || !taskRegistry) {
+          vscode.window.showErrorMessage('Rubyn Code is not running.');
+          return;
+        }
+        const editor = vscode.window.activeTextEditor;
+        if (!editor || (variant.requireSelection && editor.selection.isEmpty)) {
+          vscode.window.showWarningMessage(variant.failMessage);
+          return;
+        }
+        try {
+          const { prompt, context: ctx } = await contextProvider.enrichPrompt(
+            variant.command,
+            variant.prompt,
+          );
+          taskRegistry.start({
+            label: variant.label,
+            command: `${variant.command}.background`,
+            run: async (token) => {
+              await chatProvider.sendExternalPrompt(
+                prompt,
+                ctx as unknown as Record<string, unknown>,
+              );
+              // Resolve when the agent reports done OR the user cancels. The
+              // bridge fires `agent/status` with state='done' on completion.
+              return new Promise((resolve) => {
+                const onStatus = (params: Record<string, unknown> | undefined): void => {
+                  if (params && (params.state === 'done' || params.state === 'idle')) {
+                    bridge?.off('agent/status', onStatus);
+                    resolve({ summary: variant.label });
+                  }
+                };
+                bridge?.on('agent/status', onStatus);
+                token.onCancellationRequested(() => {
+                  bridge?.off('agent/status', onStatus);
+                  // Best-effort: ask the gem to cancel. If it doesn't respond,
+                  // the registry's 5s budget force-transitions us anyway.
+                  bridge?.notify('cancel', { command: variant.command });
+                  resolve({ summary: `${variant.label} (canceled)` });
+                });
+              });
+            },
+          });
+        } catch (err) {
+          vscode.window.showErrorMessage(
+            `${variant.command}.background failed: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        }
+      }),
+    );
+  }
+
+  // rubyn-code.viewTaskResult — open whichever surface holds the task's
+  // output. Phase 5 routes to the chat panel; later phases (megaplan PRs)
+  // can extend this to PR URLs / diff views per task.command.
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'rubyn-code.viewTaskResult',
+      async (_taskId: string) => {
+        await vscode.commands.executeCommand('rubyn-code.chat.focus');
+      },
+    ),
+  );
+
+  // rubyn-code.cancelTask — exposed from the sessions tree's context menu.
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'rubyn-code.cancelTask',
+      (taskOrId: { id?: string } | string) => {
+        if (!taskRegistry) return;
+        const id = typeof taskOrId === 'string' ? taskOrId : taskOrId?.id;
+        if (id) taskRegistry.cancel(id);
+      },
+    ),
+  );
+
+  // rubyn-code.dismissTask — drop a terminal task from the sessions view.
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'rubyn-code.dismissTask',
+      (taskOrId: { id?: string } | string) => {
+        if (!taskRegistry) return;
+        const id = typeof taskOrId === 'string' ? taskOrId : taskOrId?.id;
+        if (id) taskRegistry.dismiss(id);
+      },
     ),
   );
 

@@ -11,6 +11,14 @@ Decisions that span phases live here. Read before starting each phase; update af
 - `src/diff-provider.ts`, `src/ide-rpc-handler.ts`, `src/webview-provider.ts` — chat panel + accept/reject diff flow.
 - `test/unit/`, `test/integration/`, `test/contract/` — Vitest. `test/fixtures/rails-app/` is a committed minimal Rails layout for integration + e2e tests.
 
+## Phase 5 — Background task runner
+
+- `TaskRegistry` (`src/tasks/TaskRegistry.ts`) is the single source of truth for task lifecycle: `pending` → `running` → `succeeded` / `failed` / `canceled`. Every transition fires `onDidChange`. Phase 6 (megaplan execution) and Phase 8 (PR-check auto-recovery) consume this primitive.
+- Cancellation contract: `cancel(id)` fires the task's `CancellationTokenSource`. If the body honors the token, it resolves promptly and the registry sees the resolution. If the body ignores it, the registry force-transitions to `canceled` after a 5-second budget — surfaced to the user no matter what.
+- UI subscribes don't centralize: `SessionsTreeProvider`, `TaskStatusBar`, and `Notifier` each register independently on `registry.onDidChange`. None of them coordinate through a master "task UI" object; SRP wins over premature abstraction. The sessions view's context menu wires Cancel (running) and Dismiss (terminal) inline through `view/item/context` keyed on `viewItem == task.running | task.terminal`.
+- Background command variants live alongside their foreground counterparts (`*.background`). They reuse `ContextProvider.enrichPrompt` and `chatProvider.sendExternalPrompt`, and resolve the task when the bridge emits `agent/status` with `state=done|idle`. `reviewPR` is intentionally not yet ported — it bypasses chat and makes a direct bridge request, which needs a different task adapter.
+- The "View" notification action and the tree-row click both dispatch `rubyn-code.viewTaskResult`. Today that command just focuses the chat panel; later phases will route to PR URLs / diffs based on `task.command`.
+
 ## Phase 4 — Class complexity diagnostics
 
 - Diagnostics are extension-resident. Four metric calculators live in `src/diagnostics/metrics/` (`methodCount`, `lcom4`, `fanOut`, `cyclomatic`). LCOM4 uses union-find on a method graph whose edges are (a) shared ivar references and (b) intra-class method-call references.
