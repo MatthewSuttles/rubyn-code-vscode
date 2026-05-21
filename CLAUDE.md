@@ -11,6 +11,15 @@ Decisions that span phases live here. Read before starting each phase; update af
 - `src/diff-provider.ts`, `src/ide-rpc-handler.ts`, `src/webview-provider.ts` — chat panel + accept/reject diff flow.
 - `test/unit/`, `test/integration/`, `test/contract/` — Vitest. `test/fixtures/rails-app/` is a committed minimal Rails layout for integration + e2e tests.
 
+## Phase 6 — Megaplan single-phase execution
+
+- `PlanManager` (`src/plans/PlanManager.ts`) orchestrates the megaplan lifecycle: `proposed` → `approved` → `executing` → `phase_1_pr_open` | `failed` | `rejected`. The CLI gem does the heavy lifting (planning prompt + `plan_proposal` payload); the extension orchestrates and renders. PlanManager itself does no file I/O, no git, no PR open — it delegates via constructor deps.
+- `PlanWriter` writes `docs/<slug>/README.md` (roadmap-tracker shape) and `docs/<slug>/<NN-phase-slug>/{requirements,design,tasks}.md` per phase, then (when `rubyn-code.megaplan.autoBranch` is on) creates `rubyn/<slug>-phase-01-<phase-slug>` and commits `Megaplan: <feature>`. `autoPush` is intentionally off by default — pushing prematurely surprises users; Phase 1 execution pushes later just before opening the PR.
+- `GitAdapter` shells out to the `git` CLI (no libgit2 dep — every Rails dev already has git). `GitHubAdapter` tries `gh pr create` first, falls back to the REST API with a token from VS Code SecretStorage under `rubyn-code.github.token`. If both fail we surface a clear setup error; the plan is still written + committed so only the PR-open step is blocked.
+- Protocol additions are additive: `plan/propose` request/response, `plan/cancel` (reuses Phase 5's cancellation primitive). Extension graceful-degrades when the gem doesn't yet support these messages — `planManager.request` rejects with the bridge error and surfaces it in the UI.
+- The `rubyn-code.planFeature` command uses `vscode.window.showInputBox` instead of the design's "pre-populate chat with template" approach. The QuickInput flow is cleaner until `plan/propose` becomes a true multi-turn conversation; documented as a deviation in the phase 6 PR.
+- Plan editing before approval is intentionally not yet shipped — the design's three-tab webview editor is its own slice. Users review via the tree (label + phase summaries) and can edit the written files post-approval. Future: write phase drafts to `.rubyn-code/draft-plans/` and open them in regular VS Code editors for in-place review.
+
 ## Phase 5 — Background task runner
 
 - `TaskRegistry` (`src/tasks/TaskRegistry.ts`) is the single source of truth for task lifecycle: `pending` → `running` → `succeeded` / `failed` / `canceled`. Every transition fires `onDidChange`. Phase 6 (megaplan execution) and Phase 8 (PR-check auto-recovery) consume this primitive.
