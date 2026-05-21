@@ -408,16 +408,24 @@ export class CodeLens {
 // ---------------------------------------------------------------------------
 
 export class CancellationTokenSource {
-  token = {
+  private readonly emitter = new EventEmitter<void>();
+  token: {
+    isCancellationRequested: boolean;
+    onCancellationRequested: (handler: () => void) => Disposable;
+  } = {
     isCancellationRequested: false,
-    onCancellationRequested: vi.fn(),
+    onCancellationRequested: this.emitter.event as never,
   };
 
   cancel(): void {
+    if (this.token.isCancellationRequested) return;
     this.token.isCancellationRequested = true;
+    this.emitter.fire();
   }
 
-  dispose(): void {}
+  dispose(): void {
+    this.emitter.dispose();
+  }
 }
 
 // ---------------------------------------------------------------------------
