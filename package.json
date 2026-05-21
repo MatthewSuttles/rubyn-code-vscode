@@ -210,6 +210,18 @@
           "default": true,
           "description": "Enable Rails route-helper completion (*_path, *_url) in views, controllers, and mailers.",
           "order": 9
+        },
+        "rubyn-code.completion.associations": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable association, scope, and ActiveRecord-method completion on model traversal chains.",
+          "order": 10
+        },
+        "rubyn-code.completion.associations.debug": {
+          "type": "boolean",
+          "default": false,
+          "description": "Log ReceiverTypeResolver decisions to the Rubyn Code output channel (for debugging completion behavior).",
+          "order": 11
         }
       }
     },
