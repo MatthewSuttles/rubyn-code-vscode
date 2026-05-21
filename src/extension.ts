@@ -12,6 +12,7 @@ import { ChatWebviewProvider } from './webview-provider';
 import { DiffProvider } from './diff-provider';
 import { registerIdeRpcHandlers } from './ide-rpc-handler';
 import { RailsProject } from './rails/RailsProject';
+import { QueryMethodCompletionProvider } from './completion/QueryMethodCompletionProvider';
 import { InitializeParams, InitializeResult, ConfigGetAllResult } from './types';
 
 // ---------------------------------------------------------------------------
@@ -60,6 +61,27 @@ export async function activate(
       }
     }),
   );
+
+  // 1c. Register Rails-aware completion. Gated on a setting so users can
+  // disable without uninstalling. Provider looks up the per-folder project
+  // by document URI at completion time.
+  const completionEnabled = vscode.workspace
+    .getConfiguration('rubyn-code')
+    .get<boolean>('completion.enabled', true);
+  if (completionEnabled) {
+    const provider = new QueryMethodCompletionProvider(
+      (doc) => projectForDocument(doc),
+      (project) => project.resolver,
+    );
+    context.subscriptions.push(
+      vscode.languages.registerCompletionItemProvider(
+        { language: 'ruby' },
+        provider,
+        ':',
+        '(',
+      ),
+    );
+  }
 
   // 2. Create ProcessManager and spawn the CLI process.
   processManager = new ProcessManager(outputChannel);
@@ -409,6 +431,14 @@ export async function activate(
 // ---------------------------------------------------------------------------
 // Rails project detection
 // ---------------------------------------------------------------------------
+
+function projectForDocument(
+  doc: vscode.TextDocument,
+): RailsProject | null {
+  const folder = vscode.workspace.getWorkspaceFolder(doc.uri);
+  if (!folder) return null;
+  return railsProjects.get(folder) ?? null;
+}
 
 async function detectRailsProjects(
   outputChannel: vscode.OutputChannel,

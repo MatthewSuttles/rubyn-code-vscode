@@ -188,6 +188,12 @@
           ],
           "description": "Permission mode for tool execution.",
           "order": 7
+        },
+        "rubyn-code.completion.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable schema-aware column completion inside ActiveRecord query methods (where, order, find_by, …).",
+          "order": 8
         }
       }
     },

@@ -8,6 +8,7 @@
 
 import * as vscode from 'vscode';
 import { SchemaIndex } from './SchemaIndex';
+import { ModelTableResolver } from './ModelTableResolver';
 
 const GEMFILE_RAILS_LINE = /^\s*gem\s+['"]rails['"]/m;
 const SCHEMA_RELOAD_DEBOUNCE_MS = 200;
@@ -16,6 +17,7 @@ export class RailsProject {
   readonly root: vscode.Uri;
   readonly schemaPath: vscode.Uri | null;
   private _schema: SchemaIndex;
+  private _resolver: ModelTableResolver | null = null;
   private watcher: vscode.FileSystemWatcher | null = null;
   private reloadTimer: NodeJS.Timeout | null = null;
 
@@ -31,6 +33,13 @@ export class RailsProject {
 
   get schema(): SchemaIndex {
     return this._schema;
+  }
+
+  get resolver(): ModelTableResolver {
+    if (!this._resolver) {
+      this._resolver = new ModelTableResolver(this);
+    }
+    return this._resolver;
   }
 
   /**
@@ -104,6 +113,8 @@ export class RailsProject {
     }
     this.watcher?.dispose();
     this.watcher = null;
+    this._resolver?.dispose();
+    this._resolver = null;
   }
 }
 
