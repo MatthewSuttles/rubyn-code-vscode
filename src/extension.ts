@@ -13,6 +13,7 @@ import { DiffProvider } from './diff-provider';
 import { registerIdeRpcHandlers } from './ide-rpc-handler';
 import { RailsProject } from './rails/RailsProject';
 import { QueryMethodCompletionProvider } from './completion/QueryMethodCompletionProvider';
+import { RouteHelperCompletionProvider } from './completion/RouteHelperCompletionProvider';
 import { InitializeParams, InitializeResult, ConfigGetAllResult } from './types';
 
 // ---------------------------------------------------------------------------
@@ -62,13 +63,11 @@ export async function activate(
     }),
   );
 
-  // 1c. Register Rails-aware completion. Gated on a setting so users can
-  // disable without uninstalling. Provider looks up the per-folder project
+  // 1c. Register Rails-aware completion. Gated on settings so users can
+  // disable without uninstalling. Providers look up the per-folder project
   // by document URI at completion time.
-  const completionEnabled = vscode.workspace
-    .getConfiguration('rubyn-code')
-    .get<boolean>('completion.enabled', true);
-  if (completionEnabled) {
+  const config = vscode.workspace.getConfiguration('rubyn-code');
+  if (config.get<boolean>('completion.enabled', true)) {
     const provider = new QueryMethodCompletionProvider(
       (doc) => projectForDocument(doc),
       (project) => project.resolver,
@@ -81,6 +80,20 @@ export async function activate(
         '(',
       ),
     );
+  }
+  if (config.get<boolean>('completion.routes', true)) {
+    const provider = new RouteHelperCompletionProvider(
+      (doc) => projectForDocument(doc),
+    );
+    for (const language of ['ruby', 'erb', 'haml', 'slim']) {
+      context.subscriptions.push(
+        vscode.languages.registerCompletionItemProvider(
+          { language },
+          provider,
+          '_',
+        ),
+      );
+    }
   }
 
   // 2. Create ProcessManager and spawn the CLI process.

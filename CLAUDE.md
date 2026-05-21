@@ -11,7 +11,14 @@ Decisions that span phases live here. Read before starting each phase; update af
 - `src/diff-provider.ts`, `src/ide-rpc-handler.ts`, `src/webview-provider.ts` — chat panel + accept/reject diff flow.
 - `test/unit/`, `test/integration/`, `test/contract/` — Vitest. `test/fixtures/rails-app/` is a committed minimal Rails layout for integration + e2e tests.
 
-## Phase 1 — Schema-aware autocomplete (in progress on `feat/phase-1-schema-autocomplete`)
+## Phase 2 — Route-helper autocomplete
+
+- Routes parsing is **regex-based with a `bin/rails routes` shell fallback**, not Prism. The original phase 2 design called for `@ruby/prism` AST parsing; we deferred Prism after weighing the WASI + ESM + webpack-bundling cost and chose regex + shell fallback instead. The DSL is structured enough that regex covers the common surface (resources, resource, namespace, scope, member/collection, http verb with `to:`/`as:`, root, draw recursion, `only:`/`except:`). The shell parser is the genuine fallback for heavily metaprogrammed routes files.
+- `RoutesIndex` is lazy: constructed on first `RailsProject.routes` access, parsed on first `matching()` call. Caller must `await routes.ensureLoaded()` before reading.
+- Shell-fallback heuristic: if regex parses ≥400 bytes per route on a non-trivial file, switch to `bin/rails routes --format=json`. The shell result is cached in `.rubyn-code/routes-cache.json` keyed on routes.rb mtime so the slow Rails boot is paid only when routes.rb actually changes.
+- Phase 3 may revisit Prism integration when association/scope detection enters the picture; that work needs proper Ruby AST and a one-time webpack/WASI integration may finally earn its keep.
+
+## Phase 1 — Schema-aware autocomplete
 
 - Rails project detection is gated on `Gemfile` declaring `gem 'rails'` AND `config/application.rb` existing. `RailsProject.detect` runs before the CLI bridge so Rails-aware features survive a missing gem.
 - Schema parsing is regex-based, extension-resident, lives in `src/rails/SchemaIndex.ts`. Schema.rb is machine-generated and follows a strict template — Prism would be overkill here and adds a runtime dep.
