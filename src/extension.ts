@@ -22,6 +22,12 @@ import { TaskRegistry } from './tasks/TaskRegistry';
 import { SessionsTreeProvider } from './tasks/SessionsTreeProvider';
 import { TaskStatusBar } from './tasks/TaskStatusBar';
 import { Notifier } from './tasks/Notifier';
+import { PlanManager } from './plans/PlanManager';
+import { PlansTreeProvider } from './plans/PlansTreeProvider';
+import { PlanWriter } from './plans/PlanWriter';
+import { GitAdapter } from './plans/GitAdapter';
+import { GitHubAdapter } from './plans/GitHubAdapter';
+import { Plan, PlanProposalPayload } from './plans/types';
 import { InitializeParams, InitializeResult, ConfigGetAllResult } from './types';
 
 // ---------------------------------------------------------------------------
@@ -32,6 +38,7 @@ let bridge: Bridge | undefined;
 let processManager: ProcessManager | undefined;
 let contextProvider: ContextProvider | undefined;
 let taskRegistry: TaskRegistry | undefined;
+let planManager: PlanManager | undefined;
 const railsProjects = new Map<vscode.WorkspaceFolder, RailsProject>();
 
 // ---------------------------------------------------------------------------
@@ -61,6 +68,127 @@ export async function activate(
   );
   context.subscriptions.push(new TaskStatusBar(taskRegistry));
   context.subscriptions.push(new Notifier(taskRegistry));
+
+  // 1a-megaplan. Boot the Megaplan orchestrator when at least one workspace
+  // folder is open. The Plans tree view subscribes to PlanManager.onDidChange.
+  const megaplanEnabled = vscode.workspace
+    .getConfiguration('rubyn-code.megaplan')
+    .get<boolean>('enabled', true);
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+  let approvePlanFn: (plan: Plan) => Promise<void> = async () => undefined;
+  if (megaplanEnabled && workspaceFolder) {
+    const folderRoot = workspaceFolder.uri;
+    planManager = new PlanManager({
+      agent: {
+        proposePlan: async (feature: string) => {
+          if (!bridge) throw new Error('Rubyn Code CLI is not running.');
+          const payload = (await bridge.request('plan/propose', {
+            feature,
+          } as Record<string, unknown>)) as PlanProposalPayload;
+          return payload;
+        },
+      },
+      onApprove: async (plan: Plan) => {
+        await approvePlanFn(plan);
+      },
+    });
+    context.subscriptions.push(planManager);
+    const plansTree = new PlansTreeProvider(planManager);
+    context.subscriptions.push(plansTree);
+    context.subscriptions.push(
+      vscode.window.registerTreeDataProvider('rubyn-code.plans', plansTree),
+    );
+
+    approvePlanFn = async (plan: Plan): Promise<void> => {
+      if (!taskRegistry || !planManager) return;
+      const cfg = vscode.workspace.getConfiguration('rubyn-code.megaplan');
+      const git = new GitAdapter({ cwd: folderRoot.fsPath });
+      const writer = new PlanWriter({
+        root: folderRoot,
+        git,
+        autoBranch: cfg.get<boolean>('autoBranch', true),
+        autoPush: cfg.get<boolean>('autoPush', false),
+      });
+      const result = await writer.write(plan);
+      outputChannel.appendLine(
+        `Megaplan: wrote ${result.writtenPaths.length} files` +
+          (result.branch ? ` on branch ${result.branch}` : ''),
+      );
+
+      const phase = plan.phases[0];
+      taskRegistry.start({
+        label: `Megaplan: ${plan.feature} (Phase 1)`,
+        command: 'rubyn-code.megaplan.executePhase',
+        run: async (token) => {
+          planManager?.setExecuting(plan.id);
+          if (!bridge) {
+            planManager?.setFailed(plan.id, 'CLI is not running');
+            throw new Error('CLI is not running');
+          }
+          const tasksRel =
+            result.writtenPaths.find((p) => p.endsWith('tasks.md')) ??
+            `docs/${plan.slug}/01-${phase.slug}/tasks.md`;
+          const prompt = `Execute Phase ${phase.number} of the "${plan.feature}" megaplan. Follow ${tasksRel} top-to-bottom, committing as you go. Stay within the existing permission mode.`;
+          await new Promise<void>((resolve) => {
+            const onStatus = (params: Record<string, unknown> | undefined): void => {
+              if (params && (params.state === 'done' || params.state === 'idle')) {
+                bridge?.off('agent/status', onStatus);
+                resolve();
+              }
+            };
+            bridge?.on('agent/status', onStatus);
+            token.onCancellationRequested(() => {
+              bridge?.off('agent/status', onStatus);
+              bridge?.notify('cancel', { command: 'rubyn-code.megaplan.executePhase' });
+              resolve();
+            });
+            if (contextProvider) {
+              void contextProvider
+                .enrichPrompt('megaplan.executePhase', prompt)
+                .then(({ prompt: enriched, context: ctx }) =>
+                  chatProvider.sendExternalPrompt(
+                    enriched,
+                    ctx as unknown as Record<string, unknown>,
+                  ),
+                );
+            }
+          });
+
+          if (result.branch) {
+            try {
+              await git.push(result.branch);
+            } catch (err) {
+              outputChannel.appendLine(
+                `Megaplan: push failed — ${err instanceof Error ? err.message : err}`,
+              );
+            }
+            try {
+              const gh = new GitHubAdapter({
+                cwd: folderRoot.fsPath,
+                secrets: {
+                  get: async (key) => await context.secrets.get(key),
+                },
+              });
+              const url = await gh.openPR({
+                title: `Megaplan Phase 1: ${phase.name}`,
+                body: renderPrBody(plan, phase),
+                base: 'main',
+                head: result.branch,
+              });
+              planManager?.setPrOpen(plan.id, url);
+              return { summary: `Phase 1 PR: ${url}`, prUrl: url };
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              planManager?.setFailed(plan.id, msg);
+              return { summary: `PR open failed: ${msg}` };
+            }
+          }
+          planManager?.setFailed(plan.id, 'No branch was created (autoBranch disabled)');
+          return { summary: 'No branch created.' };
+        },
+      });
+    };
+  }
 
   // 1b. Detect Rails projects across workspace folders. Runs before the CLI
   // bridge so Rails-aware features stay available even if the gem isn't
@@ -592,6 +720,76 @@ export async function activate(
     ),
   );
 
+  // Megaplan commands.
+  context.subscriptions.push(
+    vscode.commands.registerCommand('rubyn-code.planFeature', async () => {
+      if (!planManager) {
+        vscode.window.showErrorMessage(
+          'Megaplan is disabled or no workspace is open.',
+        );
+        return;
+      }
+      const feature = await vscode.window.showInputBox({
+        prompt: 'Describe the feature you want a plan for',
+        placeHolder: 'e.g. Add a soft-delete column to posts with a deleted_at scope',
+        ignoreFocusOut: true,
+      });
+      if (!feature) return;
+      try {
+        await planManager.request(feature);
+        await vscode.commands.executeCommand('rubyn-code.plans.focus');
+      } catch (err) {
+        vscode.window.showErrorMessage(
+          `Plan request failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'rubyn-code.approvePlan',
+      async (treeItem: { id?: string } | string) => {
+        if (!planManager) return;
+        const id = typeof treeItem === 'string' ? treeItem : treeItem?.id;
+        if (!id) return;
+        try {
+          await planManager.approve(id);
+        } catch (err) {
+          vscode.window.showErrorMessage(
+            `Plan approve failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      },
+    ),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'rubyn-code.rejectPlan',
+      (treeItem: { id?: string } | string) => {
+        if (!planManager) return;
+        const id = typeof treeItem === 'string' ? treeItem : treeItem?.id;
+        if (id) planManager.reject(id);
+      },
+    ),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'rubyn-code.openPlanPr',
+      async (treeItem: { id?: string } | string) => {
+        if (!planManager) return;
+        const id = typeof treeItem === 'string' ? treeItem : treeItem?.id;
+        if (!id) return;
+        const plan = planManager.get(id);
+        if (plan?.prUrl) {
+          await vscode.env.openExternal(vscode.Uri.parse(plan.prUrl));
+        }
+      },
+    ),
+  );
+
   // rubyn-code.refactorFromDiagnostic — fired by the "Ask Rubyn to refactor"
   // code action surfaced for any rubyn-code complexity diagnostic. The
   // payload carries the diagnostic message + range so the chat prompt is
@@ -681,6 +879,36 @@ export async function activate(
   }
 
   outputChannel.appendLine('Rubyn Code extension activated.');
+}
+
+// ---------------------------------------------------------------------------
+// Megaplan approval
+// ---------------------------------------------------------------------------
+
+function renderPrBody(plan: Plan, phase: import('./plans/types').PhaseSpec): string {
+  return `## Megaplan: ${plan.feature} — Phase ${phase.number}
+
+${phase.summary}
+
+## What shipped
+
+See \`docs/${plan.slug}/${pad2(phase.number)}-${phase.slug}/tasks.md\` for the executed checklist.
+
+## What proves it
+
+- \`npm run test\` green
+- Typecheck + build clean
+
+## What's deferred
+
+Phase 2+ of the megaplan; tracked in \`docs/${plan.slug}/README.md\`.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+`;
+}
+
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : String(n);
 }
 
 // ---------------------------------------------------------------------------
