@@ -304,12 +304,19 @@ export class CompletionItem {
   kind?: CompletionItemKind;
   detail?: string;
   documentation?: string | MarkdownString;
-  insertText?: string;
+  insertText?: string | SnippetString;
   range?: Range;
 
   constructor(label: string, kind?: CompletionItemKind) {
     this.label = label;
     this.kind = kind;
+  }
+}
+
+export class SnippetString {
+  value: string;
+  constructor(value = '') {
+    this.value = value;
   }
 }
 

@@ -204,6 +204,12 @@
           "default": true,
           "description": "Enable schema-aware column completion inside ActiveRecord query methods (where, order, find_by, …).",
           "order": 8
+        },
+        "rubyn-code.completion.routes": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Rails route-helper completion (*_path, *_url) in views, controllers, and mailers.",
+          "order": 9
         }
       }
     },

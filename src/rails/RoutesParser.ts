@@ -63,13 +63,13 @@ const STANDARD_SINGULAR_ACTIONS: Array<{
 const HTTP_VERBS = new Set(['get', 'post', 'put', 'patch', 'delete']);
 
 const BLOCK_OPENER =
-  /^\s*(namespace|scope|resources|resource|member|collection|concern|constraints)\b([^#]*?)\bdo(?:\s*\|[^|]*\|)?\s*(?:#.*)?$/;
-const BLOCK_END = /^\s*end\s*(?:#.*)?$/;
-const HTTP_VERB_LINE =
-  /^\s*(get|post|put|patch|delete|match)\b([^#]*)$/;
+  /^\s*(namespace|scope|resources|resource|member|collection|concern|constraints)\b(.*?)\bdo(?:\s*\|[^|]*\|)?\s*$/;
+const BLOCK_END = /^\s*end\s*$/;
+const HTTP_VERB_LINE = /^\s*(get|post|put|patch|delete|match)\b(.*)$/;
 const DRAW_LINE = /^\s*draw\s+:?(\w+)/;
-const ROOT_LINE = /^\s*root\b([^#]*)$/;
-const RESOURCES_SHORTHAND = /^\s*(resources|resource)\s+(:[A-Za-z_]\w*(?:\s*,\s*:[A-Za-z_]\w*)*)\s*(?:#.*)?$/;
+const ROOT_LINE = /^\s*root\b(.*)$/;
+const RESOURCES_SHORTHAND =
+  /^\s*(resources|resource)\s+(:[A-Za-z_]\w*(?:\s*,\s*:[A-Za-z_]\w*)*)\s*(?:,\s*(.*))?$/;
 
 interface Frame {
   kind:
@@ -144,8 +144,9 @@ export class RoutesParser {
       if (short) {
         const kind = short[1];
         const names = short[2].split(',').map((s) => s.trim().slice(1));
+        const opts = short[3] ?? '';
         for (const name of names) {
-          const frame = this.buildResourceFrame(kind, name, '', stack);
+          const frame = this.buildResourceFrame(kind, name, opts, stack);
           this.emitResourceRoutes(frame, out);
         }
         continue;
@@ -454,9 +455,20 @@ function findResourceFrame(stack: Frame[]): Frame | undefined {
 }
 
 function stripComment(line: string): string {
-  // Naive: ignore `#` inside strings. Routes.rb rarely puts `#` inside paths.
-  const idx = line.indexOf('#');
-  return idx === -1 ? line : line.slice(0, idx);
+  let inString: false | '"' | "'" = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const c = line[i];
+    if (inString) {
+      if (c === inString && line[i - 1] !== '\\') inString = false;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      inString = c;
+      continue;
+    }
+    if (c === '#') return line.slice(0, i);
+  }
+  return line;
 }
 
 /**

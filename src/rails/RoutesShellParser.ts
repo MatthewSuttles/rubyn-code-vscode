@@ -150,22 +150,28 @@ function parseJsonOutput(stdout: string): NamedRoute[] | null {
   }
 }
 
+const KNOWN_VERBS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
+
 /**
- * Parse the Rails 6 / table-format output. Columns are: Prefix, Verb, URI
- * Pattern, Controller#Action. Header rows and routes without a prefix are
- * skipped.
+ * Parse the Rails 6 / table-format output. Columns are whitespace-separated:
+ * Prefix, Verb, URI Pattern, Controller#Action. Header rows and routes
+ * without a prefix or a recognizable verb are skipped.
  */
 function parseTableOutput(stdout: string): NamedRoute[] {
   const out: NamedRoute[] = [];
-  const lines = stdout.split('\n');
-  for (const raw of lines) {
+  for (const raw of stdout.split('\n')) {
     const trimmed = raw.trim();
     if (!trimmed) continue;
-    if (/^Prefix\b/.test(trimmed)) continue; // header
-    const parts = trimmed.split(/\s{2,}/);
-    if (parts.length < 4) continue;
-    const [helper, verb, pattern, controllerAction] = parts;
-    if (!helper || !/#/.test(controllerAction)) continue;
+    if (/^Prefix\b/.test(trimmed)) continue;
+    const tokens = trimmed.split(/\s+/);
+    if (tokens.length < 4) continue;
+    const verbIdx = tokens.findIndex((t) => KNOWN_VERBS.has(t.toUpperCase()));
+    if (verbIdx < 1) continue; // need at least one prefix token before verb
+    const helper = tokens.slice(0, verbIdx).join('_');
+    const verb = tokens[verbIdx];
+    const pattern = tokens[verbIdx + 1];
+    const controllerAction = tokens[verbIdx + 2];
+    if (!helper || !controllerAction || !controllerAction.includes('#')) continue;
     const [controller, action] = controllerAction.split('#');
     out.push({
       helper,
