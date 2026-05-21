@@ -101,6 +101,22 @@ export class Uri {
 }
 
 // ---------------------------------------------------------------------------
+// RelativePattern
+// ---------------------------------------------------------------------------
+
+export class RelativePattern {
+  readonly baseUri: Uri;
+  readonly pattern: string;
+  readonly base: string;
+
+  constructor(base: Uri | { uri: Uri }, pattern: string) {
+    this.baseUri = base instanceof Uri ? base : base.uri;
+    this.base = this.baseUri.fsPath;
+    this.pattern = pattern;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // EventEmitter
 // ---------------------------------------------------------------------------
 

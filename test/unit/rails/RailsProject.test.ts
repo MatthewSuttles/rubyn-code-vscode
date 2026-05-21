@@ -56,17 +56,40 @@ describe('RailsProject.detect', () => {
     expect(project!.schemaPath).toBeNull();
   });
 
-  it('populates schemaPath when db/schema.rb exists', async () => {
+  it('populates schemaPath and loads the schema when db/schema.rb exists', async () => {
     mockFs({
       '/app/Gemfile': "gem 'rails'\n",
       '/app/config/application.rb': '',
-      '/app/db/schema.rb': "ActiveRecord::Schema[7.1].define(version: 1) do\nend\n",
+      '/app/db/schema.rb': `
+        ActiveRecord::Schema[7.1].define(version: 1) do
+          create_table "users", force: :cascade do |t|
+            t.string "email"
+          end
+        end
+      `,
     });
 
     const project = await RailsProject.detect(folder('/app'));
 
     expect(project).not.toBeNull();
     expect(project!.schemaPath?.fsPath).toBe('/app/db/schema.rb');
+    expect(project!.schema.hasTable('users')).toBe(true);
+    expect(project!.schema.columnsFor('users')!.some((c) => c.name === 'email')).toBe(true);
+    project!.dispose();
+  });
+
+  it('returns an empty schema index when db/schema.rb is absent', async () => {
+    mockFs({
+      '/app/Gemfile': "gem 'rails'\n",
+      '/app/config/application.rb': '',
+    });
+
+    const project = await RailsProject.detect(folder('/app'));
+
+    expect(project).not.toBeNull();
+    expect(project!.schemaPath).toBeNull();
+    expect(project!.schema.tables()).toEqual([]);
+    project!.dispose();
   });
 
   it('returns null when Gemfile is missing', async () => {
