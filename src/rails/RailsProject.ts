@@ -11,6 +11,7 @@ import { SchemaIndex } from './SchemaIndex';
 import { ModelTableResolver } from './ModelTableResolver';
 import { RoutesIndex } from './RoutesIndex';
 import { ModelIndex } from './ModelIndex';
+import { ClassIndex } from './ClassIndex';
 
 const GEMFILE_RAILS_LINE = /^\s*gem\s+['"]rails['"]/m;
 const SCHEMA_RELOAD_DEBOUNCE_MS = 200;
@@ -24,6 +25,7 @@ export class RailsProject {
   private _resolver: ModelTableResolver | null = null;
   private _routes: RoutesIndex | null = null;
   private _models: Promise<ModelIndex> | null = null;
+  private _classes: Promise<ClassIndex> | null = null;
   private watcher: vscode.FileSystemWatcher | null = null;
   private reloadTimer: NodeJS.Timeout | null = null;
 
@@ -90,6 +92,34 @@ export class RailsProject {
       });
     }
     return this._models;
+  }
+
+  /**
+   * Lazily builds the all-classes index used by complexity diagnostics. Walks
+   * everything under `app/` and `lib/` (controllers, models, helpers, mailers,
+   * jobs, services, …) — wider than ModelIndex's app/models-only scope.
+   */
+  async getClasses(): Promise<ClassIndex> {
+    if (!this._classes) {
+      const folder = this.folder;
+      this._classes = ClassIndex.build(this.root, {
+        readFile: async (uri) => {
+          const bytes = await vscode.workspace.fs.readFile(uri);
+          return new TextDecoder().decode(bytes);
+        },
+        findRubyFiles: async () => {
+          const pattern = new vscode.RelativePattern(
+            folder,
+            '{app,lib}/**/*.rb',
+          );
+          return await vscode.workspace.findFiles(pattern);
+        },
+      }).then((index) => {
+        index.startWatching(folder);
+        return index;
+      });
+    }
+    return this._classes;
   }
 
   /**
@@ -170,6 +200,10 @@ export class RailsProject {
     if (this._models) {
       this._models.then((m) => m.dispose()).catch(() => {});
       this._models = null;
+    }
+    if (this._classes) {
+      this._classes.then((c) => c.dispose()).catch(() => {});
+      this._classes = null;
     }
   }
 }
