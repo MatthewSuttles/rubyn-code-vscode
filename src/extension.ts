@@ -11,6 +11,7 @@ import { createModelSelector } from './model-selector';
 import { ChatWebviewProvider } from './webview-provider';
 import { DiffProvider } from './diff-provider';
 import { registerIdeRpcHandlers } from './ide-rpc-handler';
+import { RailsProject } from './rails/RailsProject';
 import { InitializeParams, InitializeResult, ConfigGetAllResult } from './types';
 
 // ---------------------------------------------------------------------------
@@ -20,6 +21,7 @@ import { InitializeParams, InitializeResult, ConfigGetAllResult } from './types'
 let bridge: Bridge | undefined;
 let processManager: ProcessManager | undefined;
 let contextProvider: ContextProvider | undefined;
+const railsProjects = new Map<vscode.WorkspaceFolder, RailsProject>();
 
 // ---------------------------------------------------------------------------
 // Activation
@@ -35,6 +37,29 @@ export async function activate(
   console.log('[Rubyn Code] Extension activate() called');
   vscode.window.showInformationMessage('Rubyn Code is starting...');
   context.subscriptions.push(outputChannel);
+
+  // 1b. Detect Rails projects across workspace folders. Runs before the CLI
+  // bridge so Rails-aware features stay available even if the gem isn't
+  // installed. Later phases hang completion / diagnostics providers off the
+  // per-folder RailsProject held in `railsProjects`.
+  await detectRailsProjects(outputChannel);
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeWorkspaceFolders(async (e) => {
+      for (const removed of e.removed) {
+        railsProjects.get(removed)?.dispose();
+        railsProjects.delete(removed);
+      }
+      for (const added of e.added) {
+        const project = await RailsProject.detect(added);
+        if (project) {
+          railsProjects.set(added, project);
+          outputChannel.appendLine(
+            `Rails project detected: ${added.uri.fsPath}`,
+          );
+        }
+      }
+    }),
+  );
 
   // 2. Create ProcessManager and spawn the CLI process.
   processManager = new ProcessManager(outputChannel);
@@ -382,6 +407,26 @@ export async function activate(
 }
 
 // ---------------------------------------------------------------------------
+// Rails project detection
+// ---------------------------------------------------------------------------
+
+async function detectRailsProjects(
+  outputChannel: vscode.OutputChannel,
+): Promise<void> {
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  for (const folder of folders) {
+    const project = await RailsProject.detect(folder);
+    if (project) {
+      railsProjects.set(folder, project);
+      outputChannel.appendLine(`Rails project detected: ${folder.uri.fsPath}`);
+    }
+  }
+  if (railsProjects.size === 0) {
+    outputChannel.appendLine('No Rails projects detected in workspace.');
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Config helpers
 // ---------------------------------------------------------------------------
 
@@ -427,6 +472,11 @@ export async function deactivate(): Promise<void> {
     contextProvider.dispose();
     contextProvider = undefined;
   }
+
+  for (const project of railsProjects.values()) {
+    project.dispose();
+  }
+  railsProjects.clear();
 }
 
 // ---------------------------------------------------------------------------
