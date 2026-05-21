@@ -15,6 +15,9 @@ import { RailsProject } from './rails/RailsProject';
 import { QueryMethodCompletionProvider } from './completion/QueryMethodCompletionProvider';
 import { RouteHelperCompletionProvider } from './completion/RouteHelperCompletionProvider';
 import { AssociationCompletionProvider } from './completion/AssociationCompletionProvider';
+import { RubyClassDiagnosticProvider } from './diagnostics/RubyClassDiagnosticProvider';
+import { RefactorCodeActionProvider } from './diagnostics/RefactorCodeActionProvider';
+import { loadThresholds, ThresholdConfig } from './diagnostics/ThresholdConfig';
 import { InitializeParams, InitializeResult, ConfigGetAllResult } from './types';
 
 // ---------------------------------------------------------------------------
@@ -115,6 +118,42 @@ export async function activate(
       );
     }
   }
+
+  // 1d. Class-complexity diagnostics. One provider per Rails project, sharing
+  // the project's lazy ClassIndex. Thresholds cascade VS Code settings →
+  // `.rubyn-code/diagnostics.yml` → built-in defaults. The refactor code
+  // action's command handler is registered later (it needs chatProvider).
+  for (const project of railsProjects.values()) {
+    let current: ThresholdConfig = await loadThresholds(project.root);
+    const provider = new RubyClassDiagnosticProvider(
+      () => project.getClasses(),
+      () => current,
+    );
+    context.subscriptions.push(provider);
+    void provider.refreshAll();
+    context.subscriptions.push(
+      vscode.workspace.onDidSaveTextDocument((doc) => {
+        if (doc.uri.scheme !== 'file') return;
+        if (!doc.uri.fsPath.startsWith(project.root.fsPath)) return;
+        if (!doc.uri.fsPath.endsWith('.rb')) return;
+        void provider.refreshForFile(doc.uri);
+      }),
+    );
+    context.subscriptions.push(
+      vscode.workspace.onDidChangeConfiguration(async (e) => {
+        if (!e.affectsConfiguration('rubyn-code.diagnostics')) return;
+        current = await loadThresholds(project.root);
+        void provider.refreshAll();
+      }),
+    );
+  }
+  context.subscriptions.push(
+    vscode.languages.registerCodeActionsProvider(
+      { language: 'ruby' },
+      new RefactorCodeActionProvider(),
+      { providedCodeActionKinds: RefactorCodeActionProvider.providedCodeActionKinds },
+    ),
+  );
 
   // 2. Create ProcessManager and spawn the CLI process.
   processManager = new ProcessManager(outputChannel);
@@ -403,6 +442,42 @@ export async function activate(
         'Explain this code. Describe what it does, why, and any notable patterns or potential issues.',
         'Select some code first, then run Explain Code.',
       ),
+    ),
+  );
+
+  // rubyn-code.refactorFromDiagnostic — fired by the "Ask Rubyn to refactor"
+  // code action surfaced for any rubyn-code complexity diagnostic. The
+  // payload carries the diagnostic message + range so the chat prompt is
+  // grounded in the specific signal that fired.
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'rubyn-code.refactorFromDiagnostic',
+      async (payload: {
+        uri: string;
+        diagnosticCode: string;
+        message: string;
+        range: { start: { line: number; character: number }; end: { line: number; character: number } };
+      }) => {
+        if (!contextProvider) {
+          vscode.window.showErrorMessage('Rubyn Code is not running.');
+          return;
+        }
+        const promptText = `Refactor to address this complexity warning: ${payload.message}\n\nFocus on splitting responsibilities, reducing coupling, and lowering branch density. Maintain existing public behavior.`;
+        try {
+          const { prompt, context: ctx } = await contextProvider.enrichPrompt(
+            'refactorFromDiagnostic',
+            promptText,
+          );
+          await chatProvider.sendExternalPrompt(
+            prompt,
+            ctx as unknown as Record<string, unknown>,
+          );
+        } catch (err) {
+          vscode.window.showErrorMessage(
+            `Refactor failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      },
     ),
   );
 

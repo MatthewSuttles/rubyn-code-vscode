@@ -133,7 +133,10 @@ const MODULE_DECL = /^\s*module\s+([A-Z][A-Za-z0-9_]*)\s*$/;
 const DEF_LINE = /^(\s*)def\s+(self\.)?([A-Za-z_][A-Za-z0-9_?!=]*)/;
 const VISIBILITY_LINE = /^\s*(public|private|protected)\s*$/;
 const CLASS_SHIFT = /^\s*class\s*<<\s*self\s*$/;
-const END_LINE = /^\s*end\s*$/;
+// Match `end` at the start of a logical line. The trailing `\b` so `endless`
+// / `ender` don't false-positive; the line can carry on with operators or
+// method calls (`end || x`, `end.tap { … }`).
+const END_LINE = /^\s*end\b/;
 
 /** Tokens that increment cyclomatic complexity when found as word boundaries. */
 const BRANCH_KEYWORDS = ['if', 'elsif', 'unless', 'while', 'until', 'when', 'rescue'];

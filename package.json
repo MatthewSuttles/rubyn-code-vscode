@@ -64,6 +64,10 @@
         "command": "rubyn-code.rejectEdit",
         "title": "Reject Rubyn Edit",
         "icon": "$(close)"
+      },
+      {
+        "command": "rubyn-code.refactorFromDiagnostic",
+        "title": "Rubyn Code: Refactor from Diagnostic"
       }
     ],
     "menus": {
@@ -86,6 +90,10 @@
         },
         {
           "command": "rubyn-code.rejectEdit",
+          "when": "false"
+        },
+        {
+          "command": "rubyn-code.refactorFromDiagnostic",
           "when": "false"
         }
       ]
@@ -222,6 +230,40 @@
           "default": false,
           "description": "Log ReceiverTypeResolver decisions to the Rubyn Code output channel (for debugging completion behavior).",
           "order": 11
+        },
+        "rubyn-code.diagnostics.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Master switch for Rubyn Code class-complexity diagnostics (method count, LCOM4, fan-out, cyclomatic complexity).",
+          "order": 12
+        },
+        "rubyn-code.diagnostics.methodCountThreshold": {
+          "type": "number",
+          "default": 15,
+          "minimum": 0,
+          "description": "Warn when a class has more than this many public methods. Set to 0 to disable the signal.",
+          "order": 13
+        },
+        "rubyn-code.diagnostics.lcomMinMethods": {
+          "type": "number",
+          "default": 5,
+          "minimum": 0,
+          "description": "Minimum method count for LCOM4 to evaluate the class. Set to 0 to disable.",
+          "order": 14
+        },
+        "rubyn-code.diagnostics.fanOutThreshold": {
+          "type": "number",
+          "default": 10,
+          "minimum": 0,
+          "description": "Info when a class references more than this many distinct external classes. Set to 0 to disable.",
+          "order": 15
+        },
+        "rubyn-code.diagnostics.cyclomaticThreshold": {
+          "type": "number",
+          "default": 8,
+          "minimum": 0,
+          "description": "Warn when a single method's cyclomatic complexity exceeds this. Set to 0 to disable.",
+          "order": 16
         }
       }
     },

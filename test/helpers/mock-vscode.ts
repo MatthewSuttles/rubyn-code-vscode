@@ -321,6 +321,74 @@ export class SnippetString {
 }
 
 // ---------------------------------------------------------------------------
+// Diagnostics
+// ---------------------------------------------------------------------------
+
+export enum DiagnosticSeverity {
+  Error = 0,
+  Warning = 1,
+  Information = 2,
+  Hint = 3,
+}
+
+export class Diagnostic {
+  source?: string;
+  code?: string | number | { value: string | number; target?: Uri };
+  relatedInformation?: unknown[];
+  tags?: number[];
+
+  constructor(
+    public range: Range,
+    public message: string,
+    public severity: DiagnosticSeverity = DiagnosticSeverity.Error,
+  ) {}
+}
+
+export class DiagnosticCollection {
+  private entries = new Map<string, Diagnostic[]>();
+  constructor(readonly name: string) {}
+
+  set(uri: Uri, diags: Diagnostic[] | undefined): void {
+    if (!diags || diags.length === 0) this.entries.delete(uri.fsPath);
+    else this.entries.set(uri.fsPath, diags);
+  }
+  delete(uri: Uri): void {
+    this.entries.delete(uri.fsPath);
+  }
+  clear(): void {
+    this.entries.clear();
+  }
+  get(uri: Uri): Diagnostic[] | undefined {
+    return this.entries.get(uri.fsPath);
+  }
+  forEach(fn: (uri: Uri, diags: Diagnostic[]) => void): void {
+    for (const [path, diags] of this.entries.entries()) {
+      fn(Uri.file(path), diags);
+    }
+  }
+  dispose(): void {
+    this.entries.clear();
+  }
+}
+
+export class CodeActionKind {
+  static readonly QuickFix = new CodeActionKind('quickfix');
+  static readonly Refactor = new CodeActionKind('refactor');
+  constructor(public readonly value: string) {}
+}
+
+export class CodeAction {
+  diagnostics?: Diagnostic[];
+  command?: { title: string; command: string; arguments?: unknown[] };
+  edit?: WorkspaceEdit;
+  isPreferred?: boolean;
+  constructor(
+    public title: string,
+    public kind?: CodeActionKind,
+  ) {}
+}
+
+// ---------------------------------------------------------------------------
 // CodeLens
 // ---------------------------------------------------------------------------
 
@@ -545,6 +613,12 @@ export const languages = {
       return new Disposable(() => {});
     },
   ),
+  registerCodeActionsProvider: vi.fn(
+    (_selector: any, _provider: any, _metadata?: any) => {
+      return new Disposable(() => {});
+    },
+  ),
+  createDiagnosticCollection: vi.fn((name: string) => new DiagnosticCollection(name)),
 };
 
 // ---------------------------------------------------------------------------
