@@ -10,6 +10,7 @@ import * as vscode from 'vscode';
 import { SchemaIndex } from './SchemaIndex';
 import { ModelTableResolver } from './ModelTableResolver';
 import { RoutesIndex } from './RoutesIndex';
+import { ModelIndex } from './ModelIndex';
 
 const GEMFILE_RAILS_LINE = /^\s*gem\s+['"]rails['"]/m;
 const SCHEMA_RELOAD_DEBOUNCE_MS = 200;
@@ -22,6 +23,7 @@ export class RailsProject {
   private _schema: SchemaIndex;
   private _resolver: ModelTableResolver | null = null;
   private _routes: RoutesIndex | null = null;
+  private _models: Promise<ModelIndex> | null = null;
   private watcher: vscode.FileSystemWatcher | null = null;
   private reloadTimer: NodeJS.Timeout | null = null;
 
@@ -60,6 +62,34 @@ export class RailsProject {
       this._routes.startWatching(this.folder);
     }
     return this._routes;
+  }
+
+  /**
+   * Lazily builds the model index on first access. Returns a Promise so the
+   * (potentially heavy) initial parse doesn't block construction. Subsequent
+   * accesses await the same promise so multiple consumers share the build.
+   */
+  async getModels(): Promise<ModelIndex> {
+    if (!this._models) {
+      const folder = this.folder;
+      this._models = ModelIndex.build(this.root, {
+        readFile: async (uri) => {
+          const bytes = await vscode.workspace.fs.readFile(uri);
+          return new TextDecoder().decode(bytes);
+        },
+        findModelFiles: async () => {
+          const pattern = new vscode.RelativePattern(
+            folder,
+            'app/models/**/*.rb',
+          );
+          return await vscode.workspace.findFiles(pattern);
+        },
+      }).then((index) => {
+        index.startWatching(folder);
+        return index;
+      });
+    }
+    return this._models;
   }
 
   /**
@@ -137,6 +167,10 @@ export class RailsProject {
     this._resolver = null;
     this._routes?.dispose();
     this._routes = null;
+    if (this._models) {
+      this._models.then((m) => m.dispose()).catch(() => {});
+      this._models = null;
+    }
   }
 }
 

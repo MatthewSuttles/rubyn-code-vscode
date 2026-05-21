@@ -11,6 +11,12 @@ Decisions that span phases live here. Read before starting each phase; update af
 - `src/diff-provider.ts`, `src/ide-rpc-handler.ts`, `src/webview-provider.ts` — chat panel + accept/reject diff flow.
 - `test/unit/`, `test/integration/`, `test/contract/` — Vitest. `test/fixtures/rails-app/` is a committed minimal Rails layout for integration + e2e tests.
 
+## Phase 3 — Association / scope autocomplete
+
+- Model AST parsing is **extension-resident and regex-based** — third Prism deferral. The Phase 3 design assumed Phase 2 had landed `@ruby/prism`; it hadn't, and the same WASI + ESM + webpack-bundling cost applied here. `ModelIndex` walks `app/models/**/*.rb` line-by-line, recognizes class declarations (incl. `module Foo; class Bar < ...` and `class << self`), and extracts the macros that sit at class-body top level: `has_many`, `has_one`, `belongs_to`, `has_and_belongs_to_many`, `scope`, `def`, `def self.`. Method bodies are skipped. Phase 4 may finally revisit Prism if complexity diagnostics need real cyclomatic-complexity and LCOM4 measurements that line-scans can't compute.
+- `ReceiverTypeResolver` is the heart of association completion: given a cursor immediately after `.`, walk the chain leftward, balance parens around arg lists, then reduce step by step. Constants resolve through `ModelIndex.byName`; `@ivar` and locals resolve via assignment scan inside the enclosing `def`; `@ivar` in controllers falls back to the conventional `@user`-in-`UsersController` binding. **Never guess** — anything unrecognized returns `unknown`.
+- `AssociationCompletionProvider` triggers on `.` and emits per-receiver-type items: class → scopes + class methods + AR class methods; instance → associations + instance methods + AR instance methods; relation → associations + scopes + AR relation methods. Returns nothing on `unknown`, so Phase 1's column completion and Phase 2's route helpers keep firing without competition. VS Code aggregates and dedupes.
+
 ## Phase 2 — Route-helper autocomplete
 
 - Routes parsing is **regex-based with a `bin/rails routes` shell fallback**, not Prism. The original phase 2 design called for `@ruby/prism` AST parsing; we deferred Prism after weighing the WASI + ESM + webpack-bundling cost and chose regex + shell fallback instead. The DSL is structured enough that regex covers the common surface (resources, resource, namespace, scope, member/collection, http verb with `to:`/`as:`, root, draw recursion, `only:`/`except:`). The shell parser is the genuine fallback for heavily metaprogrammed routes files.

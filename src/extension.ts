@@ -14,6 +14,7 @@ import { registerIdeRpcHandlers } from './ide-rpc-handler';
 import { RailsProject } from './rails/RailsProject';
 import { QueryMethodCompletionProvider } from './completion/QueryMethodCompletionProvider';
 import { RouteHelperCompletionProvider } from './completion/RouteHelperCompletionProvider';
+import { AssociationCompletionProvider } from './completion/AssociationCompletionProvider';
 import { InitializeParams, InitializeResult, ConfigGetAllResult } from './types';
 
 // ---------------------------------------------------------------------------
@@ -91,6 +92,25 @@ export async function activate(
           { language },
           provider,
           '_',
+        ),
+      );
+    }
+  }
+  if (config.get<boolean>('completion.associations', true)) {
+    const provider = new AssociationCompletionProvider(
+      async (doc) => {
+        const project = projectForDocument(doc);
+        return project ? await project.getModels() : null;
+      },
+      outputChannel,
+      { debug: config.get<boolean>('completion.associations.debug', false) },
+    );
+    for (const language of ['ruby', 'erb', 'haml', 'slim']) {
+      context.subscriptions.push(
+        vscode.languages.registerCompletionItemProvider(
+          { language },
+          provider,
+          '.',
         ),
       );
     }

@@ -529,6 +529,7 @@ export const workspace = {
     (_handler: any) => new Disposable(() => {}),
   ),
   getWorkspaceFolder: vi.fn((_uri: Uri) => undefined as any),
+  findFiles: vi.fn(async (_pattern: any) => [] as Uri[]),
 };
 
 // ---------------------------------------------------------------------------
